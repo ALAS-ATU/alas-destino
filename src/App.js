@@ -38522,13 +38522,7 @@ function PassengersModule({ passengers, setPassengers }) {
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <button style={{ ...S.btn("ghost"), fontSize: 12 }}
                             onClick={() => {
-                              const msg = `Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋
-
-Tu acceso al portal de seguimiento de tu viaje:
-📧 Email: ${acceso.email}
-🔑 Contraseña: ${acceso.password}
-
-✈️ Alas a tu Destino`;
+                              const msg = `Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋\n\nTu acceso al portal de seguimiento de tu viaje:\n🌐 Link: alasatudestino.netlify.app\n📧 Email: ${acceso.email}\n🔑 Contraseña: ${acceso.password}\n\n✈️ Alas a tu Destino`;
                               copyToClipboard(msg);
                               alert("✓ Credenciales copiadas al portapapeles.");
                             }}>
@@ -38539,15 +38533,7 @@ Tu acceso al portal de seguimiento de tu viaje:
                               onClick={() => {
                                 const phone = (selected.phone||"").replace(/\D/g,"");
                                 const argPhone = phone.startsWith("54") ? phone : phone.startsWith("0") ? "54" + phone.slice(1) : "54" + phone;
-                                const msg = encodeURIComponent(`Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋
-
-Tu acceso al portal de seguimiento de tu viaje:
-📧 Email: ${acceso.email}
-🔑 Contraseña: ${acceso.password}
-
-✈️ Alas a tu Destino
-alasatudestino.tur.ar`);
-                                window.open(`https://web.whatsapp.com/send?phone=${argPhone}&text=${msg}`, '_blank');
+                                const msg = encodeURIComponent(`Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋\n\nTu acceso al portal de seguimiento de tu viaje:\n🌐 Link: alasatudestino.netlify.app\n📧 Email: ${acceso.email}\n🔑 Contraseña: ${acceso.password}\n\n✈️ Alas a tu Destino`);
                               }}>
                               💬 Enviar por WhatsApp
                             </button>
