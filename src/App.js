@@ -38522,37 +38522,34 @@ function PassengersModule({ passengers, setPassengers }) {
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <button style={{ ...S.btn("ghost"), fontSize: 12 }}
                             onClick={() => {
-                              const msg = `Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋\n\nTu acceso al portal de seguimiento de tu viaje:\n🌐 Link: alasatudestino.netlify.app\n📧 Email: ${acceso.email}\n🔑 Contraseña: ${acceso.password}\n\n✈️ Alas a tu Destino`;
-                              copyToClipboard(msg);
-                              alert("✓ Credenciales copiadas al portapapeles.");
+                              const nombre = selected.name.split(",").reverse().join(" ").trim();
+                              const msgCopy = "Hola " + nombre + "! Tu acceso al portal:\nLink: alasatudestino.netlify.app\nEmail: " + acceso.email + "\nContrasena: " + acceso.password + "\nAlas a tu Destino";
+                              copyToClipboard(msgCopy);
+                              alert("Credenciales copiadas al portapapeles.");
                             }}>
-                            📋 Copiar credenciales
+                            Copiar credenciales
                           </button>
                           {selected.phone && (
                             <button style={{ ...S.btn("primary"), fontSize: 12, background: "linear-gradient(90deg, #25d366, #128c7e)" }}
                               onClick={() => {
-                                const phone = (selected.phone||"").replace(/\D/g,"");
-                                const argPhone = phone.startsWith("54") ? phone : phone.startsWith("0") ? "54" + phone.slice(1) : "54" + phone;
-                                const msg = encodeURIComponent(`Hola ${selected.name.split(",").reverse().join(" ").trim()}! 👋\n\nTu acceso al portal de seguimiento de tu viaje:\n🌐 Link: alasatudestino.netlify.app\n📧 Email: ${acceso.email}\n🔑 Contraseña: ${acceso.password}\n\n✈️ Alas a tu Destino`);
+                                const nombre = selected.name.split(",").reverse().join(" ").trim();
+                                const rawPhone = (selected.phone||"").replace(/[^0-9]/g, "");
+                                const argPhone = rawPhone.startsWith("54") ? rawPhone : "54" + rawPhone;
+                                const msgWA = "Hola " + nombre + "! Tu acceso al portal:%0ALink: alasatudestino.netlify.app%0AEmail: " + acceso.email + "%0AContrasena: " + acceso.password + "%0AAlas a tu Destino";
+                                window.open("https://web.whatsapp.com/send?phone=" + argPhone + "&text=" + msgWA, "_blank");
                               }}>
-                              💬 Enviar por WhatsApp
+                              Enviar por WhatsApp
                             </button>
                           )}
                           {selected.email && (
                             <button style={{ ...S.btn("ghost"), fontSize: 12 }}
                               onClick={() => {
-                                const subject = encodeURIComponent("Tu acceso al portal de viajes - Alas a tu Destino");
-                                const body = encodeURIComponent(`Hola ${selected.name.split(",").reverse().join(" ").trim()}!
-
-Tu acceso al portal de seguimiento de tu viaje:
-Email: ${acceso.email}
-Contraseña: ${acceso.password}
-
-Alas a tu Destino
-info@alasatudestino.tur.ar | +54 911 23092954`);
-                                window.open(`mailto:${selected.email}?subject=${subject}&body=${body}`, '_blank');
+                                const nombre = selected.name.split(",").reverse().join(" ").trim();
+                                const subject = encodeURIComponent("Tu acceso al portal - Alas a tu Destino");
+                                const body = encodeURIComponent("Hola " + nombre + "!\n\nLink: alasatudestino.netlify.app\nEmail: " + acceso.email + "\nContrasena: " + acceso.password + "\n\nAlas a tu Destino");
+                                window.open("mailto:" + selected.email + "?subject=" + subject + "&body=" + body, "_blank");
                               }}>
-                              📧 Enviar por Email
+                              Enviar por Email
                             </button>
                           )}
                         </div>
@@ -41252,7 +41249,11 @@ const pageTitle = { dashboard: ["Dashboard", "Resumen general de operaciones"], 
 
 export default function App() {
   const [view, setView] = useState("dashboard");
-  const [mode, setMode] = useState("admin");
+  const [mode, setMode] = useState(() => {
+    // If accessed from public URL (not localhost), start in passenger portal
+    const isPublic = !window.location.hostname.includes('localhost');
+    return isPublic ? "passenger" : "admin";
+  });
   const [quotes, setQuotes] = useState(() => {
     try { const s = localStorage.getItem('atd_quotes'); return s ? JSON.parse(s) : initialQuotes; } catch { return initialQuotes; }
   });
