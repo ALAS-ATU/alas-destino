@@ -38535,7 +38535,7 @@ function PassengersModule({ passengers, setPassengers }) {
                                 const nombre = selected.name.split(",").reverse().join(" ").trim();
                                 const rawPhone = (selected.phone||"").replace(/[^0-9]/g, "");
                                 const argPhone = rawPhone.startsWith("54") ? rawPhone : "54" + rawPhone;
-                                const msgWA = "Hola " + nombre + "! Tu acceso al portal:%0ALink: alasatudestino.netlify.app%0AEmail: " + acceso.email + "%0AContrasena: " + acceso.password + "%0AAlas a tu Destino";
+                                const msgWA = "Hola " + nombre + "!%0A%0ATu acceso al portal de seguimiento de tu viaje:%0A%0A1. Abri Safari o Chrome en tu celular%0A2. Toca la barra de direcciones (arriba)%0A3. Escribe: alasatudestino.netlify.app%0A4. Presiona Ir o Enter%0A%0AEmail: " + acceso.email + "%0AContrasena: " + acceso.password + "%0A%0AAlas a tu Destino%0A+54 911 23092954";
                                 window.open("https://web.whatsapp.com/send?phone=" + argPhone + "&text=" + msgWA, "_blank");
                               }}>
                               Enviar por WhatsApp
