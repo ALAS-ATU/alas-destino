@@ -39570,7 +39570,7 @@ function QuotesModule({ quotes, setQuotes }) {
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>Destino</label>
                 <DestinationSearch value={form.destination} onChange={v => setForm({ ...form, destination: v })} />
-
+              </div>
               {/* PASAJEROS */}
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>Pasajeros</label>
