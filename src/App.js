@@ -37214,27 +37214,48 @@ function PassengerPortal({ onBack }) {
     return `${base}${num}!`;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setLoginError("");
     const email = loginForm.email.trim().toLowerCase();
     const password = loginForm.password.trim();
     if (!email || !password) { setLoginError("Completá email y contraseña."); return; }
 
-    // Search in passengers
+    // Search in passengers - first try Supabase, then localStorage
     try {
-      const passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      setLoginError("Verificando...");
+      
+      // Load passengers from Supabase
+      let passengers = [];
+      try {
+        const sbPax = await SB.loadBlob('ventas', 'atd_passengers');
+        if (sbPax && Array.isArray(sbPax) && sbPax.length > 0) {
+          passengers = sbPax;
+        } else {
+          passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        }
+      } catch {
+        passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      }
+
       const pax = passengers.find(p => (p.email||"").toLowerCase() === email);
       if (!pax) { setLoginError("Email no encontrado. Contactá a la agencia."); return; }
 
-      // Check password - use stored or generated
+      // Check password
       const expectedPassword = pax.acceso?.password || genPassword(pax.name, pax.email);
       if (password !== expectedPassword) { setLoginError("Contraseña incorrecta."); return; }
 
-      // Find ventas
+      // Find ventas from Supabase
       const ventas = [];
-      MESES.forEach(m => {
-        try {
-          const data = JSON.parse(localStorage.getItem(`ventas_2026_${m}`) || '[]');
+      try {
+        for (const m of MESES) {
+          const key = `ventas_2026_${m}`;
+          let data = [];
+          try {
+            const sbData = await SB.loadBlob('ventas', key);
+            data = sbData && Array.isArray(sbData) ? sbData : JSON.parse(localStorage.getItem(key) || '[]');
+          } catch {
+            data = JSON.parse(localStorage.getItem(key) || '[]');
+          }
           data.forEach(v => {
             if ((v.clientEmail||"").toLowerCase() === email ||
                 v.cliente?.toLowerCase() === pax.name?.toLowerCase() ||
@@ -37242,12 +37263,13 @@ function PassengerPortal({ onBack }) {
               ventas.push({ ...v, mes: m });
             }
           });
-        } catch {}
-      });
+        }
+      } catch {}
 
       setCurrentPax(pax);
       setCurrentVentas(ventas);
       setLoginStep("portal");
+      setLoginError("");
     } catch(e) {
       setLoginError("Error al iniciar sesión. Intentá de nuevo.");
     }
