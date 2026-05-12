@@ -1,5 +1,616 @@
 import { useState, useEffect } from "react";
 
+const DESTINATIONS_DB = {
+  "América del Sur": {
+    "Argentina": [
+      "Buenos Aires",
+      "Córdoba",
+      "Rosario",
+      "Mendoza",
+      "Bariloche",
+      "Salta",
+      "Mar del Plata",
+      "Ushuaia",
+      "Puerto Iguazú",
+      "Tucumán"
+    ],
+    "Brasil": [
+      "Río de Janeiro",
+      "São Paulo",
+      "Salvador",
+      "Florianópolis",
+      "Buzios",
+      "Fortaleza",
+      "Maceió",
+      "Natal",
+      "Recife",
+      "Foz do Iguaçu",
+      "Porto Alegre",
+      "Manaus",
+      "Belém"
+    ],
+    "Uruguay": [
+      "Montevideo",
+      "Punta del Este",
+      "Colonia del Sacramento",
+      "José Ignacio"
+    ],
+    "Chile": [
+      "Santiago",
+      "Valparaíso",
+      "San Pedro de Atacama",
+      "Punta Arenas",
+      "Torres del Paine",
+      "Puerto Natales",
+      "Viña del Mar"
+    ],
+    "Perú": [
+      "Lima",
+      "Cusco",
+      "Machu Picchu",
+      "Arequipa",
+      "Trujillo",
+      "Iquitos",
+      "Puno"
+    ],
+    "Colombia": [
+      "Bogotá",
+      "Cartagena",
+      "Medellín",
+      "Cali",
+      "Santa Marta",
+      "Barranquilla"
+    ],
+    "Ecuador": [
+      "Quito",
+      "Guayaquil",
+      "Cuenca",
+      "Galápagos"
+    ],
+    "Bolivia": [
+      "La Paz",
+      "Santa Cruz de la Sierra",
+      "Sucre",
+      "Uyuni",
+      "Potosí"
+    ],
+    "Paraguay": [
+      "Asunción",
+      "Ciudad del Este"
+    ],
+    "Venezuela": [
+      "Caracas",
+      "Isla Margarita",
+      "Los Roques",
+      "Mérida"
+    ]
+  },
+  "América del Norte": {
+    "Estados Unidos": [
+      "Nueva York",
+      "Miami",
+      "Orlando",
+      "Los Ángeles",
+      "Las Vegas",
+      "Chicago",
+      "San Francisco",
+      "Washington D.C.",
+      "Boston",
+      "New Orleans",
+      "Seattle",
+      "Houston",
+      "Nashville",
+      "Key West",
+      "Honolulu"
+    ],
+    "Canadá": [
+      "Toronto",
+      "Vancouver",
+      "Montreal",
+      "Quebec",
+      "Calgary",
+      "Ottawa"
+    ],
+    "México": [
+      "Ciudad de México",
+      "Cancún",
+      "Playa del Carmen",
+      "Los Cabos",
+      "Puerto Vallarta",
+      "Guadalajara",
+      "Oaxaca",
+      "Tulum",
+      "Mérida"
+    ]
+  },
+  "El Caribe": {
+    "Cuba": [
+      "La Habana",
+      "Varadero",
+      "Trinidad",
+      "Santiago de Cuba"
+    ],
+    "República Dominicana": [
+      "Punta Cana",
+      "Santo Domingo",
+      "La Romana",
+      "Puerto Plata",
+      "Samaná"
+    ],
+    "Jamaica": [
+      "Montego Bay",
+      "Kingston",
+      "Negril",
+      "Ocho Ríos"
+    ],
+    "Bahamas": [
+      "Nassau",
+      "Paradise Island",
+      "Freeport"
+    ],
+    "Aruba": [
+      "Oranjestad",
+      "Palm Beach"
+    ],
+    "Curaçao": [
+      "Willemstad"
+    ],
+    "Barbados": [
+      "Bridgetown"
+    ],
+    "Trinidad y Tobago": [
+      "Puerto España"
+    ],
+    "Puerto Rico": [
+      "San Juan",
+      "Ponce"
+    ],
+    "Sint Maarten": [
+      "Philipsburg"
+    ],
+    "Santa Lucía": [
+      "Castries"
+    ]
+  },
+  "Europa": {
+    "España": [
+      "Madrid",
+      "Barcelona",
+      "Sevilla",
+      "Valencia",
+      "Granada",
+      "Málaga",
+      "Bilbao",
+      "San Sebastián",
+      "Palma de Mallorca",
+      "Ibiza",
+      "Toledo",
+      "Córdoba",
+      "Santiago de Compostela",
+      "Tenerife",
+      "Gran Canaria"
+    ],
+    "Francia": [
+      "París",
+      "Niza",
+      "Lyon",
+      "Marsella",
+      "Burdeos",
+      "Estrasburgo",
+      "Monaco",
+      "Toulouse"
+    ],
+    "Italia": [
+      "Roma",
+      "Milán",
+      "Venecia",
+      "Florencia",
+      "Nápoles",
+      "Amalfi",
+      "Cinque Terre",
+      "Sicilia",
+      "Cerdeña",
+      "Turín",
+      "Verona",
+      "Palermo"
+    ],
+    "Portugal": [
+      "Lisboa",
+      "Oporto",
+      "Algarve",
+      "Madeira",
+      "Azores",
+      "Sintra",
+      "Évora"
+    ],
+    "Reino Unido": [
+      "Londres",
+      "Edimburgo",
+      "Manchester",
+      "Liverpool",
+      "Oxford",
+      "Cambridge",
+      "Bath",
+      "Dublín"
+    ],
+    "Alemania": [
+      "Berlín",
+      "Munich",
+      "Hamburgo",
+      "Frankfurt",
+      "Colonia",
+      "Heidelberg",
+      "Dresde"
+    ],
+    "Países Bajos": [
+      "Ámsterdam",
+      "Rotterdam",
+      "La Haya",
+      "Utrecht"
+    ],
+    "Bélgica": [
+      "Bruselas",
+      "Brujas",
+      "Gante",
+      "Amberes"
+    ],
+    "Suiza": [
+      "Zurich",
+      "Ginebra",
+      "Berna",
+      "Lugano",
+      "Interlaken",
+      "Zermatt"
+    ],
+    "Austria": [
+      "Viena",
+      "Salzburgo",
+      "Innsbruck",
+      "Hallstatt"
+    ],
+    "Grecia": [
+      "Atenas",
+      "Santorini",
+      "Mykonos",
+      "Creta",
+      "Rodas",
+      "Corfu",
+      "Thessaloniki"
+    ],
+    "Turquía": [
+      "Estambul",
+      "Capadocia",
+      "Antalya",
+      "Bodrum",
+      "Éfeso",
+      "Pamukkale"
+    ],
+    "Croacia": [
+      "Dubrovnik",
+      "Split",
+      "Zagreb",
+      "Zadar",
+      "Hvar"
+    ],
+    "República Checa": [
+      "Praga",
+      "Brno",
+      "Český Krumlov"
+    ],
+    "Hungría": [
+      "Budapest",
+      "Pécs",
+      "Debrecen"
+    ],
+    "Polonia": [
+      "Varsovia",
+      "Cracovia",
+      "Gdansk",
+      "Poznan"
+    ],
+    "Noruega": [
+      "Oslo",
+      "Bergen",
+      "Fiordos",
+      "Tromsø",
+      "Flåm"
+    ],
+    "Suecia": [
+      "Estocolmo",
+      "Gotemburgo",
+      "Malmö"
+    ],
+    "Dinamarca": [
+      "Copenhague",
+      "Aarhus"
+    ],
+    "Finlandia": [
+      "Helsinki",
+      "Rovaniemi",
+      "Laponia"
+    ],
+    "Islandia": [
+      "Reikiavik",
+      "Akureyri",
+      "Círculo Polar"
+    ],
+    "Irlanda": [
+      "Dublín",
+      "Cork",
+      "Galway",
+      "Limerick"
+    ],
+    "Escocia": [
+      "Edimburgo",
+      "Glasgow",
+      "Highlands",
+      "Inverness"
+    ],
+    "Rusia": [
+      "Moscú",
+      "San Petersburgo"
+    ]
+  },
+  "Asia": {
+    "Japón": [
+      "Tokio",
+      "Osaka",
+      "Kioto",
+      "Hiroshima",
+      "Nara",
+      "Sapporo",
+      "Hakone",
+      "Nikko"
+    ],
+    "China": [
+      "Pekín",
+      "Shanghái",
+      "Hong Kong",
+      "Xian",
+      "Guilin",
+      "Chengdu",
+      "Lhasa"
+    ],
+    "Tailandia": [
+      "Bangkok",
+      "Phuket",
+      "Chiang Mai",
+      "Koh Samui",
+      "Krabi",
+      "Pattaya"
+    ],
+    "Indonesia": [
+      "Bali",
+      "Yakarta",
+      "Yogyakarta",
+      "Lombok",
+      "Komodo"
+    ],
+    "Vietnam": [
+      "Hanói",
+      "Ho Chi Minh",
+      "Hoi An",
+      "Ha Long",
+      "Da Nang",
+      "Hue"
+    ],
+    "Camboya": [
+      "Siem Reap",
+      "Angkor Wat",
+      "Phnom Penh"
+    ],
+    "India": [
+      "Delhi",
+      "Mumbai",
+      "Agra",
+      "Jaipur",
+      "Goa",
+      "Kerala",
+      "Varanasi",
+      "Bangalore"
+    ],
+    "Nepal": [
+      "Katmandú",
+      "Pokhara",
+      "Everest Base Camp"
+    ],
+    "Sri Lanka": [
+      "Colombo",
+      "Sigiriya",
+      "Kandy",
+      "Galle"
+    ],
+    "Singapur": [
+      "Singapur"
+    ],
+    "Malasia": [
+      "Kuala Lumpur",
+      "Penang",
+      "Langkawi",
+      "Borneo"
+    ],
+    "Filipinas": [
+      "Manila",
+      "Palawan",
+      "Cebú",
+      "Boracay"
+    ],
+    "Corea del Sur": [
+      "Seúl",
+      "Busán",
+      "Jeju",
+      "Gyeongju"
+    ],
+    "Maldivas": [
+      "Malé",
+      "Atolón Ari",
+      "Atolón Baa"
+    ],
+    "Emiratos Árabes": [
+      "Dubái",
+      "Abu Dhabi",
+      "Sharjah"
+    ],
+    "Israel": [
+      "Tel Aviv",
+      "Jerusalén",
+      "Haifa",
+      "Mar Muerto",
+      "Eilat"
+    ],
+    "Jordania": [
+      "Amman",
+      "Petra",
+      "Wadi Rum",
+      "Aqaba"
+    ],
+    "Omán": [
+      "Mascate",
+      "Nizwa",
+      "Salalah"
+    ]
+  },
+  "África": {
+    "Marruecos": [
+      "Marrakech",
+      "Casablanca",
+      "Fez",
+      "Tánger",
+      "Essaouira",
+      "Chefchaouen"
+    ],
+    "Egipto": [
+      "El Cairo",
+      "Luxor",
+      "Aswan",
+      "Alejandría",
+      "Sharm el-Sheikh",
+      "Hurgada"
+    ],
+    "Sudáfrica": [
+      "Ciudad del Cabo",
+      "Johannesburgo",
+      "Safari Kruger",
+      "Durban",
+      "Garden Route"
+    ],
+    "Kenia": [
+      "Nairobi",
+      "Safari Masai Mara",
+      "Mombasa",
+      "Amboseli"
+    ],
+    "Tanzania": [
+      "Serengeti",
+      "Kilimanjaro",
+      "Zanzíbar",
+      "Dar es Salaam"
+    ],
+    "Madagascar": [
+      "Antananarivo",
+      "Nosy Be"
+    ],
+    "Etiopía": [
+      "Addis Abeba",
+      "Lalibela"
+    ],
+    "Ghana": [
+      "Accra"
+    ],
+    "Senegal": [
+      "Dakar"
+    ]
+  },
+  "Oceanía": {
+    "Australia": [
+      "Sídney",
+      "Melbourne",
+      "Brisbane",
+      "Cairns",
+      "Perth",
+      "Adelaida",
+      "Gold Coast",
+      "Gran Barrera de Coral",
+      "Uluru",
+      "Tasmania"
+    ],
+    "Nueva Zelanda": [
+      "Auckland",
+      "Queenstown",
+      "Wellington",
+      "Christchurch",
+      "Rotorua",
+      "Fiordland"
+    ],
+    "Fiji": [
+      "Viti Levu",
+      "Mamanuca",
+      "Yasawa"
+    ],
+    "Polinesia Francesa": [
+      "Bora Bora",
+      "Tahití",
+      "Moorea",
+      "Rangiroa"
+    ],
+    "Hawái": [
+      "Honolulú",
+      "Maui",
+      "Kauai",
+      "Big Island"
+    ]
+  },
+  "Cruceros": {
+    "Cruceros Caribe": [
+      "Caribe Norte",
+      "Caribe Sur",
+      "Caribe Este",
+      "Caribe Oeste"
+    ],
+    "Cruceros Mediterráneo": [
+      "Mediterráneo Oriental",
+      "Mediterráneo Occidental",
+      "Mediterráneo Completo"
+    ],
+    "Cruceros Europa": [
+      "Fiordos Noruegos",
+      "Islas Británicas",
+      "Báltico",
+      "Canarias"
+    ],
+    "Cruceros América": [
+      "Alaska",
+      "Canal de Panamá",
+      "Costa Este USA",
+      "Nueva Inglaterra"
+    ],
+    "Cruceros Sudamérica": [
+      "Antártida",
+      "Patagonia",
+      "Chile",
+      "Amazon"
+    ],
+    "Cruceros Asia": [
+      "Japón",
+      "Sudeste Asiático",
+      "India"
+    ],
+    "Cruceros Lujo": [
+      "World Cruise",
+      "Islas del Pacífico",
+      "Oceanía"
+    ]
+  }
+};
+
+const ALL_CITIES = [];
+Object.entries(DESTINATIONS_DB).forEach(([continent, countries]) => {
+  Object.entries(countries).forEach(([country, cities]) => {
+    cities.forEach(city => ALL_CITIES.push({ city, country, continent }));
+  });
+});
+
+
 // ============================================================
 // SUPABASE CONFIG
 // ============================================================
@@ -38713,6 +39324,63 @@ function PassengersModule({ passengers, setPassengers }) {
   );
 }
 
+
+function DestinationSearch({ value, onChange, placeholder }) {
+  const [query, setQuery] = useState(value || "");
+  const [suggestions, setSuggestions] = useState([]);
+  const [show, setShow] = useState(false);
+
+  const handleChange = (val) => {
+    setQuery(val);
+    onChange(val);
+    if (val.length < 2) { setSuggestions([]); setShow(false); return; }
+    const q = val.toLowerCase();
+    const filtered = ALL_CITIES.filter(d =>
+      d.city.toLowerCase().includes(q) ||
+      d.country.toLowerCase().includes(q)
+    ).slice(0, 10);
+    setSuggestions(filtered);
+    setShow(filtered.length > 0);
+  };
+
+  const handleSelect = (d) => {
+    const full = d.city + ", " + d.country;
+    setQuery(full);
+    onChange(full);
+    setSuggestions([]);
+    setShow(false);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        style={S.input}
+        value={query}
+        placeholder={placeholder || "Escribí ciudad o país..."}
+        onChange={e => handleChange(e.target.value)}
+        onBlur={() => setTimeout(() => setShow(false), 150)}
+        onFocus={() => query.length >= 2 && suggestions.length > 0 && setShow(true)}
+      />
+      {show && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 8, zIndex: 999, maxHeight: 280, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+          {suggestions.map((d, i) => (
+            <div key={i} onMouseDown={() => handleSelect(d)}
+              style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#1e2e6a"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", fontFamily: "system-ui" }}>{d.city}</div>
+                <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{d.country} · {d.continent}</div>
+              </div>
+              <span style={{ fontSize: 10, color: "#3a4a80", fontFamily: "system-ui" }}>{d.continent}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientSearch({ value, onChange, onSelect }) {
   const [query, setQuery] = useState(value || "");
   const [suggestions, setSuggestions] = useState([]);
@@ -38901,8 +39569,8 @@ function QuotesModule({ quotes, setQuotes }) {
               {/* REST OF FORM */}
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>Destino</label>
-                <input style={S.input} value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} />
-              </div>
+                <DestinationSearch value={form.destination} onChange={v => setForm({ ...form, destination: v })} />
+
               {/* PASAJEROS */}
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>Pasajeros</label>
@@ -39143,7 +39811,7 @@ function QuoteDetailModal({ quote, onClose, onUpdate, onConvertToSale }) {
       .totales{background:#f8f9ff;border:2px solid #1a2580;border-radius:8px;padding:20px;margin-top:20px}
       .total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:15px}
       .total-final{font-size:22px;font-weight:900;color:#e8334a;border-top:2px solid #1a2580;padding-top:10px;margin-top:8px}
-      .notas{background:#fff8f8;border-left:4px solid #e8334a;padding:16px;margin-top:20px;border-radius:4px}
+      .notas{background:#fff8f8;border-left:4px solid #e8334a;padding:16px;margin-top:20px;border-radius:4px;white-space:pre-wrap;font-family:Arial,sans-serif;font-size:13px;line-height:1.6}
       .footer{margin-top:40px;text-align:center;color:#7080b0;font-size:12px;border-top:1px solid #eee;padding-top:20px}
     </style></head><body>
     <div class="header">
@@ -39176,7 +39844,7 @@ function QuoteDetailModal({ quote, onClose, onUpdate, onConvertToSale }) {
       <div class="total-row"><span>Tipo de cambio</span><span>$${Number(tcambio).toLocaleString()} ARS/USD</span></div>
       <div class="total-row total-final"><span>Total en ARS</span><strong>$${totalARS.toLocaleString('es-AR')} ARS</strong></div>
     </div>
-    ${notas ? `<div class="notas"><strong>Notas:</strong><br>${notas}</div>` : ''}
+    ${notas ? "<div class=\"notas\"><strong>Notas:</strong><br>" + notas.split("\n").join("<br>") + "</div>" : ""}
     <div class="footer">
       Alas a tu Destino • +54 911 23092954 • info@alasatudestino.tur.ar • alasatudestino.tur.ar<br>
       Esta cotización tiene validez de 48 horas desde su emisión.
@@ -41084,7 +41752,7 @@ function VentasModule({ mes, globalPayments, setGlobalPayments }) {
               )}
               <div><label style={S.label}>Fecha</label><input type="date" style={S.input} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></div>
               <div><label style={S.label}>Cliente</label><input style={S.input} value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} /></div>
-              <div><label style={S.label}>Destino</label><input style={S.input} value={form.destino} onChange={e => setForm({ ...form, destino: e.target.value })} /></div>
+              <div><label style={S.label}>Destino</label><DestinationSearch value={form.destino} onChange={v => setForm({ ...form, destino: v })} /></div>
               <div><label style={S.label}>Servicio</label>
                 <select style={S.input} value={form.servicio} onChange={e => setForm({ ...form, servicio: e.target.value })}>
                   <option value="">Seleccionar...</option>
