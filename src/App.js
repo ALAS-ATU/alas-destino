@@ -40246,6 +40246,54 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
   const destinosMes = {};
   ventasMes.forEach(v => { destinosMes[v.destino||'Sin destino'] = (destinosMes[v.destino||'Sin destino']||0)+1; });
 
+
+  const COLORS = ["#e8334a","#60a5fa","#4ade80","#fbbf24","#a78bfa","#f97316","#06b6d4","#ec4899","#84cc16","#f43f5e"];
+
+  const renderPieChart = (entries) => {
+    const total = entries.reduce((a,[,v])=>a+v, 0);
+    if (total === 0) return <div style={{ color: "#3a4a80", fontSize: 12, fontFamily: "system-ui", padding: "20px 0", textAlign: "center" }}>Sin datos</div>;
+    let cumAngle = -Math.PI/2;
+    const cx = 100, cy = 100, r = 85;
+    const slices = entries.map(([label, val], i) => {
+      const pct = val / total;
+      const start = cumAngle;
+      cumAngle += pct * 2 * Math.PI;
+      const end = cumAngle;
+      const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end), y2 = cy + r * Math.sin(end);
+      const mid = start + pct * Math.PI;
+      return { label, val, pct, x1, y1, x2, y2, large: pct > 0.5 ? 1 : 0,
+        lx: cx + 55*Math.cos(mid), ly: cy + 55*Math.sin(mid), color: COLORS[i % COLORS.length] };
+    });
+    return (
+      <div>
+        <svg width="200" height="200" style={{ display: "block", margin: "0 auto 16px" }}>
+          {slices.map((s, i) => (
+            <g key={i}>
+              <path d={`M${cx},${cy} L${s.x1},${s.y1} A${r},${r} 0 ${s.large},1 ${s.x2},${s.y2} Z`} fill={s.color} stroke="#111d3c" strokeWidth={2}>
+                <title>{s.label}: {s.val} ({Math.round(s.pct*100)}%)</title>
+              </path>
+              {s.pct > 0.07 && <text x={s.lx} y={s.ly} textAnchor="middle" dominantBaseline="middle" style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }}>{Math.round(s.pct*100)}%</text>}
+            </g>
+          ))}
+        </svg>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {slices.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "system-ui", fontSize: 11 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color, flexShrink: 0 }}/>
+              <span style={{ color: "#c8d4f0" }}>{s.label}</span>
+              <span style={{ color: s.color, fontWeight: 700 }}>{s.val}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const allVentas = MESES.flatMap(m => { try { return JSON.parse(localStorage.getItem(`ventas_2026_${m}`) || '[]'); } catch { return []; } });
+  const destinosGlobal = Object.entries(allVentas.reduce((acc,v) => { const k=v.destino||"Sin destino"; acc[k]=(acc[k]||0)+1; return acc; }, {})).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const provGlobal = Object.entries(payments.filter(p=>p.tipo==="proveedor").reduce((acc,p) => { const k=p.proveedor||"Sin proveedor"; acc[k]=(acc[k]||0)+(p.amount||0); return acc; }, {})).sort((a,b)=>b[1]-a[1]);
+
   return (
     <div>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 24 }}>
@@ -40258,9 +40306,22 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
         <button style={{ ...S.btn("primary"), fontSize: 13 }} onClick={downloadPDF}>📄 Descargar PDF</button>
         <button style={{ ...S.btn("ghost"), fontSize: 13 }} onClick={downloadExcel}>📊 Descargar Excel</button>
       </div>
+      {/* PIE CHARTS */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div style={S.card}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 16 }}>✈️ Destinos más vendidos (2026)</div>
+          {renderPieChart(destinosGlobal)}
+        </div>
+        <div style={S.card}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", marginBottom: 16 }}>🏢 Pagos por proveedor</div>
+          {renderPieChart(provGlobal.map(([k,v]) => [k, v]))}
+        </div>
+      </div>
+
+      {/* MONTH DETAIL */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12 }}>✈️ Destinos vendidos — {mesReporte.charAt(0).toUpperCase()+mesReporte.slice(1)}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12 }}>✈️ Destinos — {mesReporte.charAt(0).toUpperCase()+mesReporte.slice(1)}</div>
           {Object.entries(destinosMes).sort((a,b)=>b[1]-a[1]).map(([d,c]) => (
             <div key={d} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #1e2e6a", fontFamily: "system-ui", fontSize: 13 }}>
               <span style={{ color: "#c8d4f0" }}>{d}</span>
@@ -40270,20 +40331,89 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
           {Object.keys(destinosMes).length === 0 && <div style={{ color: "#3a4a80", fontSize: 12, fontFamily: "system-ui" }}>Sin ventas este mes</div>}
         </div>
         <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", marginBottom: 12 }}>🏢 Pagos por proveedor (total)</div>
-          {Object.entries(
-            payments.filter(p => p.tipo === "proveedor").reduce((acc,p) => {
-              const k = p.proveedor||"Sin proveedor";
-              acc[k] = (acc[k]||0) + (p.amount||0);
-              return acc;
-            }, {})
-          ).map(([prov, total]) => (
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", marginBottom: 12 }}>🏢 Pagos por proveedor (detalle)</div>
+          {provGlobal.map(([prov, total]) => (
             <div key={prov} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #1e2e6a", fontFamily: "system-ui", fontSize: 13 }}>
               <span style={{ color: "#c8d4f0" }}>{prov}</span>
               <span style={{ color: "#60a5fa", fontWeight: 700 }}>${total.toLocaleString()}</span>
             </div>
           ))}
         </div>
+
+      {/* PIE CHART - Ventas por Destino */}
+      <div style={{ ...S.card, marginTop: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 20 }}>🥧 Distribución de Ventas por Destino — {mesReporte.charAt(0).toUpperCase()+mesReporte.slice(1)} 2026</div>
+        {Object.keys(destinosMes).length === 0 ? (
+          <div style={{ color: "#3a4a80", fontSize: 12, fontFamily: "system-ui", textAlign: "center", padding: "20px 0" }}>Sin ventas registradas este mes</div>
+        ) : (() => {
+          const COLORS = ["#e8334a","#60a5fa","#4ade80","#fbbf24","#a78bfa","#f97316","#06b6d4","#ec4899","#84cc16","#f43f5e"];
+          const total = Object.values(destinosMes).reduce((a,b)=>a+b,0);
+          const entries = Object.entries(destinosMes).sort((a,b)=>b[1]-a[1]);
+          
+          // SVG Pie Chart
+          let cumulativeAngle = -90;
+          const cx = 120, cy = 120, r = 100;
+          const paths = entries.map(([dest, count], i) => {
+            const pct = count / total;
+            const angle = pct * 360;
+            const startAngle = cumulativeAngle * Math.PI / 180;
+            cumulativeAngle += angle;
+            const endAngle = cumulativeAngle * Math.PI / 180;
+            const x1 = cx + r * Math.cos(startAngle);
+            const y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(endAngle);
+            const y2 = cy + r * Math.sin(endAngle);
+            const largeArc = angle > 180 ? 1 : 0;
+            const midAngle = (startAngle + endAngle) / 2;
+            const lx = cx + (r * 0.65) * Math.cos(midAngle);
+            const ly = cy + (r * 0.65) * Math.sin(midAngle);
+            return { dest, count, pct, x1, y1, x2, y2, largeArc, lx, ly, color: COLORS[i % COLORS.length] };
+          });
+
+          return (
+            <div style={{ display: "flex", gap: 40, alignItems: "center", flexWrap: "wrap" }}>
+              {/* SVG Pie */}
+              <div style={{ flexShrink: 0 }}>
+                <svg width="240" height="240" viewBox="0 0 240 240">
+                  {paths.map((p, i) => (
+                    <g key={i}>
+                      <path
+                        d={`M ${cx} ${cy} L ${p.x1} ${p.y1} A ${r} ${r} 0 ${p.largeArc} 1 ${p.x2} ${p.y2} Z`}
+                        fill={p.color}
+                        stroke="#111d3c"
+                        strokeWidth="2"
+                        style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }}
+                      />
+                      {p.pct > 0.08 && (
+                        <text x={p.lx} y={p.ly} textAnchor="middle" dominantBaseline="middle"
+                          style={{ fontSize: 11, fontWeight: 700, fill: "#ffffff", fontFamily: "system-ui" }}>
+                          {Math.round(p.pct * 100)}%
+                        </text>
+                      )}
+                    </g>
+                  ))}
+                  <circle cx={cx} cy={cy} r={40} fill="#111d3c" />
+                  <text x={cx} y={cy-6} textAnchor="middle" style={{ fontSize: 18, fontWeight: 900, fill: "#e8334a", fontFamily: "system-ui" }}>{total}</text>
+                  <text x={cx} y={cy+12} textAnchor="middle" style={{ fontSize: 9, fill: "#7080b0", fontFamily: "system-ui" }}>ventas</text>
+                </svg>
+              </div>
+              {/* Legend */}
+              <div style={{ flex: 1, minWidth: 200 }}>
+                {paths.map((p, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: 3, background: p.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, color: "#ffffff", fontFamily: "system-ui", fontWeight: 600 }}>{p.dest}</div>
+                      <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{p.count} venta{p.count>1?"s":""} · {Math.round(p.pct*100)}%</div>
+                    </div>
+                    <div style={{ width: `${Math.round(p.pct*100)}%`, maxWidth: 120, height: 6, background: p.color, borderRadius: 3, opacity: 0.7 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
       </div>
     </div>
   );
@@ -41927,7 +42057,7 @@ const MESES_2026 = ["Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre",
 
 const navItems = [
   { section: "Principal", items: [{ id: "dashboard", icon: "📊", label: "Dashboard" }] },
-  { section: "Operaciones", items: [{ id: "destinations", icon: "🌍", label: "Destinos" }, { id: "services", icon: "⚙️", label: "Servicios" }, { id: "providers", icon: "🤝", label: "Proveedores" }, { id: "quotes", icon: "📋", label: "Cotizaciones" }, { id: "payments", icon: "💼", label: "Administración" }] },
+  { section: "Operaciones", items: [{ id: "services", icon: "⚙️", label: "Servicios" }, { id: "providers", icon: "🤝", label: "Proveedores" }, { id: "quotes", icon: "📋", label: "Cotizaciones" }, { id: "payments", icon: "💼", label: "Administración" }] },
   { section: "Pasajeros", items: [{ id: "passengers", icon: "👥", label: "Pasajeros" }] },
   { section: "Ventas 2026", items: MESES_2026.map(m => ({ id: `ventas_2026_${m.toLowerCase()}`, icon: "📈", label: m })) },
 ];
@@ -41935,7 +42065,7 @@ const navItems = [
 const ventasTitles = Object.fromEntries(
   MESES_2026.map(m => [`ventas_2026_${m.toLowerCase()}`, [`Ventas — ${m} 2026`, `Registro de ventas del mes de ${m} 2026`]])
 );
-const pageTitle = { dashboard: ["Dashboard", "Resumen general de operaciones"], destinations: ["Destinos", "Gestión de paquetes y destinos disponibles"], services: ["Servicios", "Gestión de actividades, vuelos, hoteles, traslados y más"], providers: ["Proveedores", "Aerolíneas, hoteles y operadores turísticos"], quotes: ["Cotizaciones", "Solicitudes y presupuestos de viaje"], payments: ["Administración", "Caja, pagos, gastos fijos y reportes"], passengers: ["Pasajeros", "Base de datos de clientes y viajeros"], ...ventasTitles };
+const pageTitle = { dashboard: ["Dashboard", "Resumen general de operaciones"], services: ["Servicios", "Gestión de actividades, vuelos, hoteles, traslados y más"], providers: ["Proveedores", "Aerolíneas, hoteles y operadores turísticos"], quotes: ["Cotizaciones", "Solicitudes y presupuestos de viaje"], payments: ["Administración", "Caja, pagos, gastos fijos y reportes"], passengers: ["Pasajeros", "Base de datos de clientes y viajeros"], ...ventasTitles };
 
 export default function App() {
   const [view, setView] = useState("dashboard");
@@ -42089,7 +42219,6 @@ export default function App() {
         </div>
         <div style={S.content}>
           {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} />}
-          {view === "destinations" && <DestinationsModule />}
           {view === "services" && <ServicesModule />}
           {view === "providers" && <ProvidersModule />}
           {view === "quotes" && <QuotesModule quotes={quotes} setQuotes={setQuotes} />}
