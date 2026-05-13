@@ -38891,7 +38891,9 @@ function PassengersModule({ passengers, setPassengers }) {
   };
 
   const handleUpdate = () => {
-    const updatedForm = { ...form, acceso: form.acceso || { email: form.email, password: '', activo: true } };
+    // Always sync acceso.email with main email field
+    const updatedAcceso = { ...(form.acceso || {}), email: form.email || form.acceso?.email || "" };
+    const updatedForm = { ...form, acceso: updatedAcceso };
     const updated = passengers.map(p => p.id === selected.id ? { ...p, ...updatedForm } : p);
     setPassengers(updated);
     setSelected({ ...selected, ...form });
@@ -39123,7 +39125,7 @@ function PassengersModule({ passengers, setPassengers }) {
 
                 const generatedPwd = genPassword(selected.name, selected.email);
                 const acceso = { 
-                  email: selected.acceso?.email || selected.email || "", 
+                  email: selected.email || selected.acceso?.email || "",  // always use latest email from Datos
                   password: selected.acceso?.password || generatedPwd,
                   activo: true 
                 };
