@@ -39448,7 +39448,19 @@ function ClientSearch({ value, onChange, onSelect }) {
   );
 }
 
-function QuotesModule({ quotes, setQuotes }) {
+function QuotesModule({ quotes, setQuotes, passengers, setPassengers }) {
+
+  const savePassengerIfNew = (name, email, phone) => {
+    if (!name || !passengers) return;
+    const exists = passengers.find(p => p.name?.toLowerCase() === name.toLowerCase() || (email && (p.email||"").toLowerCase() === email.toLowerCase()));
+    if (!exists) {
+      const newPax = { id: Date.now(), name, email: email||"", phone: phone||"", nationality: "Argentina", trips: 0, totalSpent: 0, lastTrip: "", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
+      const updated = [...passengers, newPax];
+      setPassengers(updated);
+      try { localStorage.setItem('atd_passengers', JSON.stringify(updated)); } catch {}
+    }
+  };
+
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ client: "", clientId: "", clientEmail: "", clientPhone: "", destination: "", adults: 1, children: 0, infants: 0, date: "", total: "", status: "Pendiente" });
   const [selected, setSelected] = useState(null);
@@ -39566,6 +39578,19 @@ function QuotesModule({ quotes, setQuotes }) {
                   </div>
                 )}
               </div>
+              {/* Email y teléfono del pasajero */}
+              {!form.clientId && (
+                <div style={{ gridColumn: "1/-1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={S.label}>Email del pasajero</label>
+                    <input type="email" style={S.input} value={form.clientEmail||""} onChange={e => setForm({...form, clientEmail: e.target.value})} placeholder="Para crear perfil automático" />
+                  </div>
+                  <div>
+                    <label style={S.label}>Teléfono</label>
+                    <input style={S.input} value={form.clientPhone||""} onChange={e => setForm({...form, clientPhone: e.target.value})} placeholder="Opcional" />
+                  </div>
+                </div>
+              )}
               {/* REST OF FORM */}
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>Destino</label>
@@ -41769,7 +41794,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
   );
 }
 
-function VentasModule({ mes, globalPayments, setGlobalPayments }) {
+function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setPassengers }) {
   const mesNombre = mes.replace("ventas_2026_", "").replace(/^./, c => c.toUpperCase());
   const storageKey = mes;
 
@@ -42256,10 +42281,10 @@ export default function App() {
           {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} />}
           {view === "services" && <ServicesModule />}
           {view === "providers" && <ProvidersModule />}
-          {view === "quotes" && <QuotesModule quotes={quotes} setQuotes={setQuotes} />}
+          {view === "quotes" && <QuotesModule quotes={quotes} setQuotes={setQuotes} passengers={passengers} setPassengers={setPassengers} />}
           {view === "payments" && <PaymentsModule payments={payments} setPayments={setPayments} />}
           {view === "passengers" && <PassengersModule passengers={passengers} setPassengers={setPassengers} />}
-          {view.startsWith("ventas_") && <VentasModule mes={view} globalPayments={payments} setGlobalPayments={setPayments} />}
+          {view.startsWith("ventas_") && <VentasModule mes={view} globalPayments={payments} setGlobalPayments={setPayments} passengers={passengers} setPassengers={setPassengers} />}
         </div>
       </div>
     </div>
