@@ -37835,21 +37835,43 @@ function PassengerPortal({ onBack }) {
     try {
       setLoginError("Verificando...");
       
-      // Load passengers from Supabase
+      // Load passengers - try multiple sources
       let passengers = [];
+      let debugInfo = "";
+      
+      // Try 1: atd_passengers_portal (small, only with ventas)
       try {
-        const sbPax = await SB.loadBlob('ventas', 'atd_passengers_portal');
-        if (sbPax && Array.isArray(sbPax) && sbPax.length > 0) {
-          passengers = sbPax;
-        } else {
-          passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const sbPortal = await SB.loadBlob('ventas', 'atd_passengers_portal');
+        if (sbPortal && Array.isArray(sbPortal) && sbPortal.length > 0) {
+          passengers = sbPortal;
+          debugInfo = "portal(" + sbPortal.length + ")";
         }
-      } catch {
-        passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      } catch(e) { debugInfo = "portal_err"; }
+
+      // Try 2: atd_passengers full list
+      if (passengers.length === 0) {
+        try {
+          const sbAll = await SB.loadBlob('ventas', 'atd_passengers');
+          if (sbAll && Array.isArray(sbAll) && sbAll.length > 0) {
+            passengers = sbAll;
+            debugInfo = "full(" + sbAll.length + ")";
+          }
+        } catch(e) { debugInfo += "_full_err"; }
+      }
+
+      // Try 3: localStorage fallback
+      if (passengers.length === 0) {
+        try {
+          passengers = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+          debugInfo = "local(" + passengers.length + ")";
+        } catch {}
       }
 
       const pax = passengers.find(p => (p.email||"").toLowerCase() === email);
-      if (!pax) { setLoginError("Email no encontrado. Contactá a la agencia."); return; }
+      if (!pax) { 
+        setLoginError("Email no encontrado [" + debugInfo + "]. Contactá a la agencia."); 
+        return; 
+      }
 
       // Check password
       const expectedPassword = pax.acceso?.password || genPassword(pax.name, pax.email);
