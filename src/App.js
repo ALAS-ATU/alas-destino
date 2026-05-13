@@ -40227,47 +40227,42 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
     const ventas = getVentasMes(mesReporte);
     const pagosProveedores = payments.filter(p => p.tipo === "proveedor");
     const mesNombre = mesReporte.charAt(0).toUpperCase() + mesReporte.slice(1);
-    
-    // Build proper Excel XML (SpreadsheetML format - opens natively in Excel)
-    const cell = (val, type) => {
-      if (type === "n") return `<Cell ss:StyleID="num"><Data ss:Type="Number">${Number(val)||0}</Data></Cell>`;
-      if (type === "h") return `<Cell ss:StyleID="header"><Data ss:Type="String">${String(val)}</Data></Cell>`;
-      return `<Cell><Data ss:Type="String">${String(val||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")}</Data></Cell>`;
-    };
-    const row = cells => `<Row>${cells}</Row>`;
-    
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Styles>
-  <Style ss:ID="header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#162040" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="num"><NumberFormat ss:Format="#,##0"/></Style>
-  <Style ss:ID="red"><Font ss:Bold="1" ss:Color="#e8334a"/><Interior ss:Color="#fff0f0" ss:Pattern="Solid"/></Style>
-</Styles>
-<Worksheet ss:Name="Ventas ${mesNombre}">
-<Table>
-${row([cell("ID Venta","h"),cell("Fecha","h"),cell("Cliente","h"),cell("Destino","h"),cell("Monto USD","h"),cell("Estado","h"),cell("Método","h")])}
-${ventas.map(v => row([cell(v.ventaId),cell(v.fecha),cell(v.cliente),cell(v.destino),cell(v.monto,"n"),cell(v.estado),cell(v.metodo)])).join('
-')}
-${row([cell("TOTAL","h"),cell("","h"),cell("","h"),cell("","h"),cell(ventas.reduce((a,v)=>a+(v.monto||0),0),"n"),cell("","h"),cell("","h")])}
-</Table>
-</Worksheet>
-<Worksheet ss:Name="Pagos Proveedores">
-<Table>
-${row([cell("ID Venta","h"),cell("Fecha","h"),cell("Proveedor","h"),cell("Concepto","h"),cell("Monto","h"),cell("Moneda","h"),cell("Método","h"),cell("Estado","h")])}
-${pagosProveedores.map(p => row([cell(p.ventaId),cell(p.date),cell(p.proveedor),cell(p.concepto),cell(p.amount,"n"),cell(p.moneda),cell(p.method),cell(p.status)])).join('
-')}
-${row([cell("TOTAL","h"),cell("","h"),cell("","h"),cell("","h"),cell(pagosProveedores.reduce((a,p)=>a+(p.amount||0),0),"n"),cell("","h"),cell("","h"),cell("","h")])}
-</Table>
-</Worksheet>
-</Workbook>`;
-    
-    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const esc = v => String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const hdr = v => '<Cell ss:StyleID="h"><Data ss:Type="String">' + esc(v) + '</Data></Cell>';
+    const str = v => '<Cell><Data ss:Type="String">' + esc(v) + '</Data></Cell>';
+    const num = v => '<Cell ss:StyleID="n"><Data ss:Type="Number">' + (Number(v)||0) + '</Data></Cell>';
+    const R = cells => '<Row>' + cells.join('') + '</Row>';
+
+    const hdrVentas = R([hdr("ID Venta"),hdr("Fecha"),hdr("Cliente"),hdr("Destino"),hdr("Monto USD"),hdr("Estado"),hdr("Metodo")]);
+    const rowsVentas = ventas.map(v => R([str(v.ventaId),str(v.fecha),str(v.cliente),str(v.destino),num(v.monto),str(v.estado),str(v.metodo)])).join('');
+    const totVentas = R([hdr("TOTAL"),str(''),str(''),str(''),num(ventas.reduce((a,v)=>a+(v.monto||0),0)),str(''),str('')]);
+
+    const hdrPagos = R([hdr("ID Venta"),hdr("Fecha"),hdr("Proveedor"),hdr("Concepto"),hdr("Monto"),hdr("Moneda"),hdr("Metodo"),hdr("Estado")]);
+    const rowsPagos = pagosProveedores.map(p => R([str(p.ventaId),str(p.date),str(p.proveedor),str(p.concepto),num(p.amount),str(p.moneda),str(p.method),str(p.status)])).join('');
+    const totPagos = R([hdr("TOTAL"),str(''),str(''),str(''),num(pagosProveedores.reduce((a,p)=>a+(p.amount||0),0)),str(''),str(''),str('')]);
+
+    const parts = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<?mso-application progid="Excel.Sheet"?>',
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+      '<Styles>',
+      '<Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#162040" ss:Pattern="Solid"/></Style>',
+      '<Style ss:ID="n"><NumberFormat ss:Format="#,##0"/></Style>',
+      '</Styles>',
+      '<Worksheet ss:Name="Ventas ' + mesNombre + '"><Table>',
+      hdrVentas, rowsVentas, totVentas,
+      '</Table></Worksheet>',
+      '<Worksheet ss:Name="Pagos Proveedores"><Table>',
+      hdrPagos, rowsPagos, totPagos,
+      '</Table></Worksheet>',
+      '</Workbook>'
+    ];
+
+    const blob = new Blob([parts.join('')], { type: 'application/vnd.ms-excel;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reporte_${mesReporte}_2026.xls`;
+    a.download = 'reporte_' + mesReporte + '_2026.xls';
     a.click();
     URL.revokeObjectURL(url);
   };
