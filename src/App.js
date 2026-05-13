@@ -40226,19 +40226,49 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
   const downloadExcel = () => {
     const ventas = getVentasMes(mesReporte);
     const pagosProveedores = payments.filter(p => p.tipo === "proveedor");
-    const rows = [
-      ["ID Venta","Fecha","Cliente","Destino","Monto USD","Estado"],
-      ...ventas.map(v => [v.ventaId||'',v.fecha||'',v.cliente||'',v.destino||'',v.monto||0,v.estado||'']),
-      [],
-      ["--- PAGOS A PROVEEDORES ---"],
-      ["ID Venta","Fecha","Proveedor","Concepto","Monto","Moneda","Método","Estado"],
-      ...pagosProveedores.map(p => [p.ventaId||'',p.date||'',p.proveedor||'',p.concepto||'',p.amount||0,p.moneda||'USD',p.method||'',p.status||'']),
-    ];
-    const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const mesNombre = mesReporte.charAt(0).toUpperCase() + mesReporte.slice(1);
+    
+    // Build proper Excel XML (SpreadsheetML format - opens natively in Excel)
+    const cell = (val, type) => {
+      if (type === "n") return `<Cell ss:StyleID="num"><Data ss:Type="Number">${Number(val)||0}</Data></Cell>`;
+      if (type === "h") return `<Cell ss:StyleID="header"><Data ss:Type="String">${String(val)}</Data></Cell>`;
+      return `<Cell><Data ss:Type="String">${String(val||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")}</Data></Cell>`;
+    };
+    const row = cells => `<Row>${cells}</Row>`;
+    
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+  <Style ss:ID="header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#162040" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="num"><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="red"><Font ss:Bold="1" ss:Color="#e8334a"/><Interior ss:Color="#fff0f0" ss:Pattern="Solid"/></Style>
+</Styles>
+<Worksheet ss:Name="Ventas ${mesNombre}">
+<Table>
+${row([cell("ID Venta","h"),cell("Fecha","h"),cell("Cliente","h"),cell("Destino","h"),cell("Monto USD","h"),cell("Estado","h"),cell("Método","h")])}
+${ventas.map(v => row([cell(v.ventaId),cell(v.fecha),cell(v.cliente),cell(v.destino),cell(v.monto,"n"),cell(v.estado),cell(v.metodo)])).join('
+')}
+${row([cell("TOTAL","h"),cell("","h"),cell("","h"),cell("","h"),cell(ventas.reduce((a,v)=>a+(v.monto||0),0),"n"),cell("","h"),cell("","h")])}
+</Table>
+</Worksheet>
+<Worksheet ss:Name="Pagos Proveedores">
+<Table>
+${row([cell("ID Venta","h"),cell("Fecha","h"),cell("Proveedor","h"),cell("Concepto","h"),cell("Monto","h"),cell("Moneda","h"),cell("Método","h"),cell("Estado","h")])}
+${pagosProveedores.map(p => row([cell(p.ventaId),cell(p.date),cell(p.proveedor),cell(p.concepto),cell(p.amount,"n"),cell(p.moneda),cell(p.method),cell(p.status)])).join('
+')}
+${row([cell("TOTAL","h"),cell("","h"),cell("","h"),cell("","h"),cell(pagosProveedores.reduce((a,p)=>a+(p.amount||0),0),"n"),cell("","h"),cell("","h"),cell("","h")])}
+</Table>
+</Worksheet>
+</Workbook>`;
+    
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `reporte_${mesReporte}_2026.csv`; a.click();
+    a.href = url;
+    a.download = `reporte_${mesReporte}_2026.xls`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -40499,6 +40529,10 @@ function PaymentsModule({ payments, setPayments }) {
   const [cajaMovs, setCajaMovs] = useState(() => {
     try { return JSON.parse(localStorage.getItem('atd_caja') || '[]'); } catch { return []; }
   });
+  useEffect(() => {
+    SB.loadBlob('ventas', 'atd_caja').then(d => { if (d && Array.isArray(d) && d.length > 0) { setCajaMovs(d); try { localStorage.setItem('atd_caja', JSON.stringify(d)); } catch {} } });
+    SB.loadBlob('ventas', 'atd_gastos_fijos').then(d => { if (d && Array.isArray(d) && d.length > 0) { setGastosFijos(d); try { localStorage.setItem('atd_gastos_fijos', JSON.stringify(d)); } catch {} } });
+  }, []);
   const [showCajaModal, setShowCajaModal] = useState(false);
   const [cajaForm, setCajaForm] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: "ingreso", moneda: "USD", monto: "", concepto: "", metodo: "Transferencia", referencia: "" });
 
@@ -41138,6 +41172,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
   };
 
   const [data, setData] = useState(() => mergeGlobalPayments(venta));
+  // Re-merge whenever venta changes (e.g. after sync)
+  useEffect(() => { setData(mergeGlobalPayments(venta)); }, [venta.id]);
   const [newPax, setNewPax] = useState({ nombre: "", dni: "", tipoDoc: "DNI", emision: "", expiracion: "", nacimiento: "", mail: "", telefono: "", visaUSA: false, visaNumero: "", visaTipo: "", visaEmision: "", visaExpiracion: "", visaEntradas: "", docAdj: null });
   const [newSvc, setNewSvc] = useState({ tipo: "Vuelo", descripcion: "", precio: "", neto: "", proveedor: "", moneda: "USD", incluido: true });
   const [tcambio, setTcambio] = useState(() => { try { return Number(localStorage.getItem('atd_tcambio') || 0); } catch { return 0; } });
@@ -41779,8 +41815,12 @@ function VentasModule({ mes, globalPayments, setGlobalPayments }) {
   };
 
   const handleAdd = () => {
-    const ventaNum = String(ventas.length + 1).padStart(3, '0');
-    const ventaId = `VTA-2026-${ventaNum}`;
+    // Use max existing ID + 1 to avoid duplicates on deletion
+    const maxNum = ventas.reduce((max, v) => {
+      const num = parseInt((v.ventaId||"").split("-")[2] || "0");
+      return num > max ? num : max;
+    }, 0);
+    const ventaId = `VTA-2026-${String(maxNum + 1).padStart(3, '0')}`;
     save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: [], servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
     setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "" });
     setShowModal(false);
