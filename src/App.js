@@ -37838,7 +37838,7 @@ function PassengerPortal({ onBack }) {
       // Load passengers from Supabase
       let passengers = [];
       try {
-        const sbPax = await SB.loadBlob('ventas', 'atd_passengers');
+        const sbPax = await SB.loadBlob('ventas', 'atd_passengers_portal');
         if (sbPax && Array.isArray(sbPax) && sbPax.length > 0) {
           passengers = sbPax;
         } else {
@@ -42345,6 +42345,8 @@ export default function App() {
         ['atd_destinations', null],
         ['atd_providers', null],
         ['atd_services', null],
+        ['atd_caja', null],
+        ['atd_gastos_fijos', null],
       ];
       // Also grab ventas from localStorage
       const meses = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
