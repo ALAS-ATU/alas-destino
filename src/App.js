@@ -41015,7 +41015,7 @@ function PaymentsModule({ payments, setPayments }) {
                 <label style={S.label}>Método</label>
                 {editPayment
                   ? <select style={S.input} value={editForm.method||""} onChange={e => setEditForm({...editForm, method: e.target.value})}>
-                      {["Transferencia","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
+                      {["Transferencia","Depósito Bancario","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
                     </select>
                   : <div style={{ color: "#ffffff", fontFamily: "system-ui", fontSize: 14 }}>{selectedPayment.method}</div>
                 }
@@ -41112,7 +41112,7 @@ function PaymentsModule({ payments, setPayments }) {
               <div>
                 <label style={S.label}>Método de Pago</label>
                 <select style={S.input} value={form.method} onChange={e => setForm({...form, method: e.target.value})}>
-                  {["Transferencia","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
+                  {["Transferencia","Depósito Bancario","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
                 </select>
               </div>
               <div>
