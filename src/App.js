@@ -40865,7 +40865,7 @@ function PaymentsModule({ payments, setPayments }) {
                     <div><label style={S.label}>Monto</label><input type="number" style={S.input} value={cajaForm.monto} onChange={e => setCajaForm({...cajaForm, monto: e.target.value})} /></div>
                     <div><label style={S.label}>Método</label>
                       <select style={S.input} value={cajaForm.metodo} onChange={e => setCajaForm({...cajaForm, metodo: e.target.value})}>
-                        {["Transferencia","Efectivo","Tarjeta de Crédito","Tarjeta de Débito","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
+                        {["Transferencia","Depósito Bancario","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
                       </select>
                     </div>
                     <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Concepto *</label><input style={S.input} value={cajaForm.concepto} placeholder="ej: Cobro pasajes, Pago alquiler..." onChange={e => setCajaForm({...cajaForm, concepto: e.target.value})} /></div>
@@ -41198,7 +41198,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
   const [newSvc, setNewSvc] = useState({ tipo: "Vuelo", descripcion: "", precio: "", neto: "", proveedor: "", moneda: "USD", incluido: true });
   const [tcambio, setTcambio] = useState(() => { try { return Number(localStorage.getItem('atd_tcambio') || 0); } catch { return 0; } });
   const TIPOS_SVC = ["Vuelo", "Hotel", "Traslado", "Actividad", "Auto", "Tren", "Seguro", "Circuito", "Otro"];
-  const METODOS_PAGO = ["Transferencia", "Tarjeta de Crédito", "Tarjeta de Débito", "Efectivo", "Mercado Pago", "Cheque"];
+  const METODOS_PAGO = ["Transferencia", "Depósito Bancario", "Tarjeta de Crédito", "Tarjeta de Débito", "Efectivo", "Mercado Pago", "Cheque"];
   const [newCobro, setNewCobro] = useState({ fecha: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Recibido" });
   const [newPago, setNewPago] = useState({ fecha: "", proveedor: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Pagado" });
 
@@ -41343,7 +41343,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
               <div>
                 <label style={S.label}>Método de Pago</label>
                 <select style={S.input} value={data.metodo||"Transferencia"} onChange={e => update({ metodo: e.target.value })}>
-                  {["Transferencia","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago"].map(m => <option key={m}>{m}</option>)}
+                  {["Transferencia","Depósito Bancario","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
                 </select>
               </div>
               <div>
@@ -41835,14 +41835,28 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
   };
 
   const handleAdd = () => {
-    // Use max existing ID + 1 to avoid duplicates on deletion
     const maxNum = ventas.reduce((max, v) => {
       const num = parseInt((v.ventaId||"").split("-")[2] || "0");
       return num > max ? num : max;
     }, 0);
     const ventaId = `VTA-2026-${String(maxNum + 1).padStart(3, '0')}`;
+
+    // Auto-create passenger if new
+    if (form.cliente && passengers && setPassengers) {
+      const exists = passengers.find(p =>
+        p.name?.toLowerCase() === form.cliente.toLowerCase() ||
+        (form.clienteEmail && (p.email||"").toLowerCase() === form.clienteEmail.toLowerCase())
+      );
+      if (!exists && form.showNewPax) {
+        const newPax = { id: Date.now()+1, name: form.cliente, email: form.clienteEmail||"", phone: form.clientePhone||"", nationality: "Argentina", trips: 1, totalSpent: Number(form.monto)||0, lastTrip: form.destino||"", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
+        const updatedPax = [...passengers, newPax];
+        setPassengers(updatedPax);
+        try { localStorage.setItem('atd_passengers', JSON.stringify(updatedPax)); } catch {}
+      }
+    }
+
     save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: [], servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
-    setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "" });
+    setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "", clienteEmail: "", clientePhone: "", showNewPax: false });
     setShowModal(false);
     setTipoNueva(null);
   };
@@ -41941,7 +41955,41 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
                 </div>
               )}
               <div><label style={S.label}>Fecha</label><input type="date" style={S.input} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></div>
-              <div><label style={S.label}>Cliente</label><input style={S.input} value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} /></div>
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={S.label}>Cliente</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <ClientSearch
+                      value={form.cliente}
+                      onChange={v => setForm(f => ({ ...f, cliente: v }))}
+                      onSelect={p => setForm(f => ({ ...f, cliente: p.name, clienteEmail: p.email||"", clientePhone: p.phone||"", clienteId: p.id }))}
+                    />
+                  </div>
+                  <button type="button" style={{ ...S.btn("ghost"), whiteSpace: "nowrap", fontSize: 12 }}
+                    onClick={() => setForm(f => ({ ...f, showNewPax: !f.showNewPax }))}>
+                    {form.showNewPax ? "✕ Cancelar" : "+ Nuevo"}
+                  </button>
+                </div>
+                {form.showNewPax && (
+                  <div style={{ marginTop: 10, padding: 14, background: "rgba(232,51,74,0.05)", border: "1px solid rgba(232,51,74,0.2)", borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 10 }}>Datos del nuevo pasajero</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={{ gridColumn: "1/-1" }}>
+                        <label style={S.label}>Nombre y Apellido *</label>
+                        <input style={S.input} value={form.cliente} placeholder="ej: GARCIA, JUAN" onChange={e => setForm(f => ({ ...f, cliente: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={S.label}>Email</label>
+                        <input type="email" style={S.input} value={form.clienteEmail||""} onChange={e => setForm(f => ({ ...f, clienteEmail: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={S.label}>Teléfono</label>
+                        <input style={S.input} value={form.clientePhone||""} onChange={e => setForm(f => ({ ...f, clientePhone: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div><label style={S.label}>Destino</label><DestinationSearch value={form.destino} onChange={v => setForm({ ...form, destino: v })} /></div>
               <div><label style={S.label}>Servicio</label>
                 <select style={S.input} value={form.servicio} onChange={e => setForm({ ...form, servicio: e.target.value })}>
@@ -41952,7 +42000,7 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
               <div><label style={S.label}>Monto (USD)</label><input type="number" style={S.input} value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} /></div>
               <div><label style={S.label}>Método de Pago</label>
                 <select style={S.input} value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })}>
-                  {["Transferencia","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago"].map(m => <option key={m}>{m}</option>)}
+                  {["Transferencia","Depósito Bancario","Tarjeta de Crédito","Tarjeta de Débito","Efectivo","Mercado Pago","Cheque"].map(m => <option key={m}>{m}</option>)}
                 </select>
               </div>
               <div><label style={S.label}>Estado</label>
