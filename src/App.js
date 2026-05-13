@@ -39454,7 +39454,8 @@ function QuotesModule({ quotes, setQuotes, passengers, setPassengers }) {
     if (!name || !passengers) return;
     const exists = passengers.find(p => p.name?.toLowerCase() === name.toLowerCase() || (email && (p.email||"").toLowerCase() === email.toLowerCase()));
     if (!exists) {
-      const newPax = { id: Date.now(), name, email: email||"", phone: phone||"", nationality: "Argentina", trips: 0, totalSpent: 0, lastTrip: "", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
+      const maxPaxId2 = (passengers||[]).reduce((max, p) => { const n = typeof p.id === "number" && p.id < 100000 ? p.id : 0; return n > max ? n : max; }, 0);
+      const newPax = { id: maxPaxId2 + 1, name, email: email||"", phone: phone||"", nationality: "Argentina", trips: 0, totalSpent: 0, lastTrip: "", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
       const updated = [...passengers, newPax];
       setPassengers(updated);
       try { localStorage.setItem('atd_passengers', JSON.stringify(updated)); } catch {}
@@ -41848,7 +41849,8 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
         (form.clienteEmail && (p.email||"").toLowerCase() === form.clienteEmail.toLowerCase())
       );
       if (!exists && form.showNewPax) {
-        const newPax = { id: Date.now()+1, name: form.cliente, email: form.clienteEmail||"", phone: form.clientePhone||"", nationality: "Argentina", trips: 1, totalSpent: Number(form.monto)||0, lastTrip: form.destino||"", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
+        const maxPaxId = passengers.reduce((max, p) => { const n = typeof p.id === "number" && p.id < 100000 ? p.id : 0; return n > max ? n : max; }, 0);
+        const newPax = { id: maxPaxId + 1, name: form.cliente, email: form.clienteEmail||"", phone: form.clientePhone||"", nationality: "Argentina", trips: 1, totalSpent: Number(form.monto)||0, lastTrip: form.destino||"", tipoDoc: "DNI", dni: "", passport: "", segmento: "" };
         const updatedPax = [...passengers, newPax];
         setPassengers(updatedPax);
         try { localStorage.setItem('atd_passengers', JSON.stringify(updatedPax)); } catch {}
@@ -41972,11 +41974,11 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
                 </div>
                 {form.showNewPax && (
                   <div style={{ marginTop: 10, padding: 14, background: "rgba(232,51,74,0.05)", border: "1px solid rgba(232,51,74,0.2)", borderRadius: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 10 }}>Datos del nuevo pasajero</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 10 }}>Datos del nuevo pasajero — formato: APELLIDO, NOMBRE</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div style={{ gridColumn: "1/-1" }}>
                         <label style={S.label}>Nombre y Apellido *</label>
-                        <input style={S.input} value={form.cliente} placeholder="ej: GARCIA, JUAN" onChange={e => setForm(f => ({ ...f, cliente: e.target.value }))} />
+                        <input style={S.input} value={form.cliente} placeholder="ej: GARCIA, JUAN CARLOS (Apellido, Nombre)" onChange={e => setForm(f => ({ ...f, cliente: e.target.value.toUpperCase() }))} />
                       </div>
                       <div>
                         <label style={S.label}>Email</label>
