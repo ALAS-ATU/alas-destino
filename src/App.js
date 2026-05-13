@@ -41867,70 +41867,13 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
           {/* TAB DOCUMENTACION */}
           {tab === "archivos" && (
             <div>
-              {/* VOUCHERS POR SERVICIO */}
-              {(data.servicios || []).length > 0 && (
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12 }}>🎫 Vouchers por Servicio</div>
-                  {(data.servicios || []).map(s => (
-                    <div key={s.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={S.badge("blue")}>{s.tipo}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#ffffff", fontFamily: "system-ui" }}>{s.descripcion}</span>
-                          {s.proveedor && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>· {s.proveedor}</span>}
-                        </div>
-                        <label style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>
-                          + Voucher
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
-                            onChange={e => {
-                              const file = e.target.files[0];
-                              if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = ev => {
-                                const newDoc = { name: file.name, data: ev.target.result, uploadedAt: new Date().toLocaleDateString('es-AR') };
-                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: [...(x.docs||[]), newDoc]} : x);
-                                update({ servicios: updatedSvcs });
-                              };
-                              reader.readAsDataURL(file);
-                              e.target.value = "";
-                            }} />
-                        </label>
-                      </div>
-                      {(s.docs || []).length === 0 ? (
-                        <div style={{ fontSize: 11, color: "#3a4a80", fontFamily: "system-ui", fontStyle: "italic" }}>Sin voucher adjunto</div>
-                      ) : (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {(s.docs || []).map((doc, di) => (
-                            <div key={di} style={{ display: "flex", alignItems: "center", gap: 6, background: "#0f1535", border: "1px solid #1e2e6a", borderRadius: 8, padding: "6px 12px" }}>
-                              <span>{doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? "🖼️" : "📄"}</span>
-                              <span style={{ fontSize: 11, color: "#c8d4f0", fontFamily: "system-ui", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
-                              <button onClick={() => {
-                                const w = window.open('', '_blank');
-                                if (doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                                  w.document.write('<img src="' + doc.data + '" style="max-width:100%;"/>');
-                                } else {
-                                  w.document.write('<iframe src="' + doc.data + '" width="100%" height="100%" style="border:none;position:fixed;top:0;left:0;width:100%;height:100%"></iframe>');
-                                }
-                                w.document.close();
-                              }} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10 }}>👁</button>
-                              <a href={doc.data} download={doc.name} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10, textDecoration: "none" }}>⬇</a>
-                              <button onClick={() => {
-                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: (x.docs||[]).filter((_,i) => i !== di)} : x);
-                                update({ servicios: updatedSvcs });
-                              }} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, padding: 0 }}>✕</button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* ARCHIVOS ADICIONALES */}
+              {/* DOCUMENTACION PARA PASAJERO */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>📎 Archivos adicionales</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>📎 Documentos para el pasajero</div>
+                    <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginTop: 2 }}>Vouchers, itinerarios y confirmaciones que verá el pasajero en su portal</div>
+                  </div>
                   <label style={{ ...S.btn("primary"), padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
                     + Adjuntar archivo
                     <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style={{ display: "none" }} onChange={handleFileUpload} />
