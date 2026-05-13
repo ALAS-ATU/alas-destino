@@ -39121,7 +39121,12 @@ function PassengersModule({ passengers, setPassengers }) {
                   return `${base}${num}!`;
                 };
 
-                const acceso = selected.acceso || { email: selected.email || "", password: genPassword(selected.name, selected.email), activo: true };
+                const generatedPwd = genPassword(selected.name, selected.email);
+                const acceso = { 
+                  email: selected.acceso?.email || selected.email || "", 
+                  password: selected.acceso?.password || generatedPwd,
+                  activo: true 
+                };
                 const copyToClipboard = (text) => { navigator.clipboard.writeText(text).catch(() => {}); };
 
                 return (
