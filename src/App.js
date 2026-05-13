@@ -41325,7 +41325,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
         {/* Tabs */}
         <div style={{ display: "flex", borderBottom: "1px solid #1e2e6a", marginBottom: 0, flexWrap: "wrap", gap: "2px 0" }}>
-          {[["general","📋 General"],["pasajeros","👥 Pasajeros"],["servicios","⚙️ Servicios"],["pagos","💳 Pagos"],["facturacion","🧾 Facturación"],["totales","💰 Totales"],["archivos","📎 Archivos"]].map(([id, label]) => (
+          {[["general","📋 General"],["pasajeros","👥 Pasajeros"],["servicios","⚙️ Servicios"],["pagos","💳 Pagos"],["facturacion","🧾 Facturación"],["totales","💰 Totales"],["archivos","📁 Documentación"]].map(([id, label]) => (
             <div key={id} style={tabStyle(tab === id)} onClick={() => setTab(id)}>{label}</div>
           ))}
         </div>
@@ -41391,6 +41391,28 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
               {/* Add passenger form */}
               <div style={{ background: "rgba(232,51,74,0.04)", border: "1px solid rgba(232,51,74,0.2)", borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12 }}>+ Agregar Pasajero</div>
+
+                {/* Search from existing passengers */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={S.label}>Buscar pasajero existente</label>
+                  <ClientSearch
+                    value=""
+                    onChange={() => {}}
+                    onSelect={p => {
+                      setNewPax({
+                        nombre: p.name || "", tipoDoc: p.tipoDoc || "DNI", dni: p.dni || "",
+                        nacimiento: p.birthdate || "", emision: p.docEmision || "", expiracion: p.docExpiracion || "",
+                        mail: p.email || "", telefono: p.phone || "", docAdj: null,
+                        visaUSA: p.visaUSA || false, visaNumero: p.visaNumero || "", visaTipo: p.visaTipo || "",
+                        visaEntradas: p.visaEntradas || "", visaEmision: p.visaEmision || "", visaExpiracion: p.visaExpiracion || ""
+                      });
+                    }}
+                  />
+                  <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginTop: 4 }}>
+                    Al seleccionar un pasajero se completan sus datos automáticamente
+                  </div>
+                </div>
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Nombre completo *</label><input style={S.input} value={newPax.nombre} onChange={e => setNewPax({...newPax, nombre: e.target.value})} /></div>
                   <div><label style={S.label}>Tipo documento</label>
@@ -41439,7 +41461,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
           {/* TAB SERVICIOS */}
           {tab === "servicios" && (() => {
             const svcs = data.servicios || [];
-            const totalVenta = svcs.filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.precio || 0), 0);
+            const sumaPreciosSvcs = svcs.filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.precio || 0), 0);
+            const totalVenta = sumaPreciosSvcs > 0 ? sumaPreciosSvcs : (data.monto || 0);
             const totalNeto = svcs.filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.neto || 0), 0);
             const totalUtilidad = totalVenta - totalNeto;
             const margen = totalVenta > 0 ? ((totalUtilidad / totalVenta) * 100).toFixed(1) : 0;
@@ -41455,15 +41478,81 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                     const margenSvc = s.precio > 0 ? ((utilidad / s.precio) * 100).toFixed(1) : 0;
                     return (
                     <div key={s.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                            <span style={S.badge("blue")}>{s.tipo}</span>
-                            <span style={{ fontSize: 13, color: "#ffffff", fontFamily: "system-ui", fontWeight: 600 }}>{s.descripcion}</span>
-                            {s.moneda === "ARS" && <span style={S.badge("yellow")}>ARS</span>}
-                            {s.proveedor && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>· {s.proveedor}</span>}
+                      {/* Header with edit/delete */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                          <span style={S.badge("blue")}>{s.tipo}</span>
+                          <span style={{ fontSize: 13, color: "#ffffff", fontFamily: "system-ui", fontWeight: 600 }}>{s.descripcion}</span>
+                          {s.moneda === "ARS" && <span style={S.badge("yellow")}>ARS</span>}
+                          {s.proveedor && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>· {s.proveedor}</span>}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => {
+                            const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, _editing: !x._editing} : x);
+                            update({ servicios: updatedSvcs });
+                          }} style={{ ...S.btn("ghost"), padding: "3px 8px", fontSize: 11 }}>✏️</button>
+                          <button onClick={() => removeSvc(s.id)} style={{ ...S.btn("danger"), padding: "3px 8px", fontSize: 11 }}>✕</button>
+                        </div>
+                      </div>
+
+                      {/* EDIT MODE */}
+                      {s._editing ? (
+                        <div style={{ background: "#0f1535", borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            <div style={{ gridColumn: "1/-1" }}>
+                              <label style={S.label}>Descripción</label>
+                              <input style={S.input} value={s.descripcion||""} onChange={e => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, descripcion: e.target.value} : x);
+                                update({ servicios: u });
+                              }} />
+                            </div>
+                            <div>
+                              <label style={S.label}>Precio Venta</label>
+                              <input type="number" style={S.input} value={s.precio||""} onChange={e => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, precio: Number(e.target.value)} : x);
+                                update({ servicios: u });
+                              }} />
+                            </div>
+                            <div>
+                              <label style={S.label}>Neto / Costo</label>
+                              <input type="number" style={S.input} value={s.neto||""} onChange={e => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, neto: Number(e.target.value)} : x);
+                                update({ servicios: u });
+                              }} />
+                            </div>
+                            <div>
+                              <label style={S.label}>Proveedor</label>
+                              <ProveedorSearch value={s.proveedor||""} onChange={v => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, proveedor: v} : x);
+                                update({ servicios: u });
+                              }} />
+                            </div>
+                            <div>
+                              <label style={S.label}>Moneda</label>
+                              <select style={S.input} value={s.moneda||"USD"} onChange={e => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, moneda: e.target.value} : x);
+                                update({ servicios: u });
+                              }}>
+                                <option>USD</option><option>ARS</option>
+                              </select>
+                            </div>
+                            <div style={{ gridColumn: "1/-1" }}>
+                              <label style={S.label}>Observaciones internas</label>
+                              <textarea style={{ ...S.input, height: 60, resize: "vertical" }} value={s.obsInternas||""} placeholder="ej: neto incluye todos los servicios terrestres..." onChange={e => {
+                                const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, obsInternas: e.target.value} : x);
+                                update({ servicios: u });
+                              }} />
+                            </div>
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                          <button style={{ ...S.btn("primary"), fontSize: 12 }} onClick={() => {
+                            const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, _editing: false} : x);
+                            update({ servicios: u });
+                          }}>💾 Guardar cambios</button>
+                        </div>
+                      ) : (
+                        /* VIEW MODE */
+                        <div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <div style={{ background: "#0f1535", borderRadius: 6, padding: "6px 10px" }}>
                               <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 2 }}>PRECIO VENTA</div>
                               <div style={{ fontSize: 14, fontWeight: 700, color: "#e8334a" }}>${Number(s.precio || 0).toLocaleString()}</div>
@@ -41481,41 +41570,59 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               <div style={{ fontSize: 14, fontWeight: 700, color: margenSvc >= 10 ? "#4ade80" : "#fbbf24" }}>{margenSvc}%</div>
                             </div>
                           </div>
-                          {/* Documentación del servicio */}
-                          <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10, marginTop: 10 }}>
-                            <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 6 }}>📎 Documentación del servicio</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                              {(s.docs || []).map((doc, di) => (
-                                <div key={di} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0f1535", borderRadius: 6, padding: "4px 10px", border: "1px solid #1e2e6a" }}>
-                                  <span style={{ fontSize: 12 }}>{doc.name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
-                                  <span style={{ fontSize: 11, color: "#c8d4f0", fontFamily: "system-ui" }}>{doc.name}</span>
-                                  <a href={doc.data} download={doc.name} style={{ fontSize: 11, color: "#60a5fa", marginLeft: 4 }}>⬇</a>
-                                  <button onClick={() => {
-                                    const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: (x.docs||[]).filter((_,i) => i !== di)} : x);
-                                    update({ servicios: updatedSvcs });
-                                  }} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, padding: 0, marginLeft: 2 }}>✕</button>
-                                </div>
-                              ))}
-                              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, border: "1px solid #1e2e6a", color: "#7080b0", fontFamily: "system-ui", fontSize: 11, cursor: "pointer", background: "transparent" }}>
-                                + Subir doc
-                                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display: "none" }}
-                                  onChange={e => {
-                                    const file = e.target.files[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = ev => {
-                                      const newDoc = { name: file.name, data: ev.target.result, uploadedAt: new Date().toLocaleDateString('es-AR') };
-                                      const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: [...(x.docs||[]), newDoc]} : x);
-                                      update({ servicios: updatedSvcs });
-                                    };
-                                    reader.readAsDataURL(file);
-                                    e.target.value = "";
-                                  }} />
-                              </label>
+                          {s.obsInternas && (
+                            <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", fontStyle: "italic", background: "#0f1535", borderRadius: 6, padding: "6px 10px", marginBottom: 8 }}>
+                              📝 {s.obsInternas}
                             </div>
-                          </div>
+                          )}
                         </div>
-                        <button onClick={() => removeSvc(s.id)} style={{ ...S.btn("danger"), padding: "4px 10px", fontSize: 11, marginLeft: 12 }}>✕</button>
+                      )}
+
+                      {/* Documentación del servicio */}
+                      <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10, marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 6 }}>📎 Documentación del servicio</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                          {(s.docs || []).map((doc, di) => (
+                            <div key={di} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0f1535", borderRadius: 6, padding: "4px 10px", border: "1px solid #1e2e6a" }}>
+                              <span style={{ fontSize: 12 }}>{doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? '🖼️' : '📄'}</span>
+                              <span style={{ fontSize: 11, color: "#c8d4f0", fontFamily: "system-ui", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
+                              {doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                                <button onClick={() => window.open(doc.data, '_blank')} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10 }}>👁</button>
+                              ) : (
+                                <button onClick={() => {
+                                  const w = window.open('', '_blank');
+                                  if (doc.data.startsWith('data:application/pdf')) {
+                                    w.document.write('<iframe src="' + doc.data + '" width="100%" height="100%" style="border:none;position:fixed;top:0;left:0;width:100%;height:100%"></iframe>');
+                                  } else {
+                                    w.location.href = doc.data;
+                                  }
+                                  w.document.close();
+                                }} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10 }}>👁</button>
+                              )}
+                              <a href={doc.data} download={doc.name} style={{ fontSize: 10, color: "#60a5fa" }}>⬇</a>
+                              <button onClick={() => {
+                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: (x.docs||[]).filter((_,i) => i !== di)} : x);
+                                update({ servicios: updatedSvcs });
+                              }} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, padding: 0 }}>✕</button>
+                            </div>
+                          ))}
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, border: "1px solid #1e2e6a", color: "#7080b0", fontFamily: "system-ui", fontSize: 11, cursor: "pointer" }}>
+                            + Subir doc
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display: "none" }}
+                              onChange={e => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = ev => {
+                                  const newDoc = { name: file.name, data: ev.target.result, uploadedAt: new Date().toLocaleDateString('es-AR') };
+                                  const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: [...(x.docs||[]), newDoc]} : x);
+                                  update({ servicios: updatedSvcs });
+                                };
+                                reader.readAsDataURL(file);
+                                e.target.value = "";
+                              }} />
+                          </label>
+                        </div>
                       </div>
                     </div>
                   )})}
@@ -41757,36 +41864,108 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
             </div>
           )}
 
-          {/* TAB ARCHIVOS */}
+          {/* TAB DOCUMENTACION */}
           {tab === "archivos" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <label style={S.label}>Archivos adjuntos</label>
-                <label style={{ ...S.btn("primary"), padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
-                  + Adjuntar archivo
-                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style={{ display: "none" }} onChange={handleFileUpload} />
-                </label>
-              </div>
-              {(data.adjuntos || []).length === 0 ? (
-                <div style={{ background: "#111d3c", border: "2px dashed #1e2e6a", borderRadius: 12, padding: "32px", textAlign: "center", color: "#3a4a80", fontFamily: "system-ui", fontSize: 13 }}>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                  Adjuntá cotizaciones externas, itinerarios, contratos u otros documentos
+              {/* VOUCHERS POR SERVICIO */}
+              {(data.servicios || []).length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12 }}>🎫 Vouchers por Servicio</div>
+                  {(data.servicios || []).map(s => (
+                    <div key={s.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={S.badge("blue")}>{s.tipo}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#ffffff", fontFamily: "system-ui" }}>{s.descripcion}</span>
+                          {s.proveedor && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>· {s.proveedor}</span>}
+                        </div>
+                        <label style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>
+                          + Voucher
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+                            onChange={e => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = ev => {
+                                const newDoc = { name: file.name, data: ev.target.result, uploadedAt: new Date().toLocaleDateString('es-AR') };
+                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: [...(x.docs||[]), newDoc]} : x);
+                                update({ servicios: updatedSvcs });
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }} />
+                        </label>
+                      </div>
+                      {(s.docs || []).length === 0 ? (
+                        <div style={{ fontSize: 11, color: "#3a4a80", fontFamily: "system-ui", fontStyle: "italic" }}>Sin voucher adjunto</div>
+                      ) : (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {(s.docs || []).map((doc, di) => (
+                            <div key={di} style={{ display: "flex", alignItems: "center", gap: 6, background: "#0f1535", border: "1px solid #1e2e6a", borderRadius: 8, padding: "6px 12px" }}>
+                              <span>{doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? "🖼️" : "📄"}</span>
+                              <span style={{ fontSize: 11, color: "#c8d4f0", fontFamily: "system-ui", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
+                              <button onClick={() => {
+                                const w = window.open('', '_blank');
+                                if (doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                                  w.document.write('<img src="' + doc.data + '" style="max-width:100%;"/>');
+                                } else {
+                                  w.document.write('<iframe src="' + doc.data + '" width="100%" height="100%" style="border:none;position:fixed;top:0;left:0;width:100%;height:100%"></iframe>');
+                                }
+                                w.document.close();
+                              }} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10 }}>👁</button>
+                              <a href={doc.data} download={doc.name} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10, textDecoration: "none" }}>⬇</a>
+                              <button onClick={() => {
+                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, docs: (x.docs||[]).filter((_,i) => i !== di)} : x);
+                                update({ servicios: updatedSvcs });
+                              }} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, padding: 0 }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : (data.adjuntos || []).map(adj => (
-                <div key={adj.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 22 }}>{adj.type?.includes("pdf") ? "📄" : adj.type?.includes("image") ? "🖼️" : "📎"}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#ffffff", fontFamily: "system-ui" }}>{adj.name}</div>
-                      <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{(adj.size / 1024).toFixed(1)} KB · {adj.uploadedAt}</div>
+              )}
+
+              {/* ARCHIVOS ADICIONALES */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>📎 Archivos adicionales</div>
+                  <label style={{ ...S.btn("primary"), padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
+                    + Adjuntar archivo
+                    <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style={{ display: "none" }} onChange={handleFileUpload} />
+                  </label>
+                </div>
+                {(data.adjuntos || []).length === 0 ? (
+                  <div style={{ background: "#111d3c", border: "2px dashed #1e2e6a", borderRadius: 12, padding: "24px", textAlign: "center", color: "#3a4a80", fontFamily: "system-ui", fontSize: 13 }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📂</div>
+                    Adjuntá contratos, itinerarios, confirmaciones u otros documentos
+                  </div>
+                ) : (data.adjuntos || []).map(adj => (
+                  <div key={adj.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 22 }}>{adj.type?.includes("pdf") ? "📄" : adj.type?.includes("image") ? "🖼️" : "📎"}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#ffffff", fontFamily: "system-ui" }}>{adj.name}</div>
+                        <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{adj.size ? (adj.size / 1024).toFixed(1) + " KB · " : ""}{adj.uploadedAt}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => {
+                        const w = window.open('', '_blank');
+                        if (adj.type?.includes("image")) {
+                          w.document.write('<img src="' + adj.data + '" style="max-width:100%;"/>');
+                        } else {
+                          w.document.write('<iframe src="' + adj.data + '" width="100%" height="100%" style="border:none;position:fixed;top:0;left:0;width:100%;height:100%"></iframe>');
+                        }
+                        w.document.close();
+                      }}>👁</button>
+                      <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => { const l = document.createElement('a'); l.href = adj.data; l.download = adj.name; l.click(); }}>⬇</button>
+                      <button style={{ ...S.btn("danger"), padding: "5px 10px", fontSize: 11 }} onClick={() => update({ adjuntos: (data.adjuntos || []).filter(a => a.id !== adj.id) })}>✕</button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => { const l = document.createElement('a'); l.href = adj.data; l.download = adj.name; l.click(); }}>⬇</button>
-                    <button style={{ ...S.btn("danger"), padding: "5px 10px", fontSize: 11 }} onClick={() => update({ adjuntos: (data.adjuntos || []).filter(a => a.id !== adj.id) })}>✕</button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -41857,7 +42036,16 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
       }
     }
 
-    save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: [], servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
+    // Auto-add cliente as first pasajero
+    const titularPax = form.cliente ? [{
+      id: Date.now() + 10,
+      nombre: form.cliente,
+      tipoDoc: "DNI", dni: "", nacimiento: "", emision: "", expiracion: "",
+      mail: form.clienteEmail || "", telefono: form.clientePhone || "",
+      visaUSA: false, docAdj: null
+    }] : [];
+
+    save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: titularPax, servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
     setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "", clienteEmail: "", clientePhone: "", showNewPax: false });
     setShowModal(false);
     setTipoNueva(null);
