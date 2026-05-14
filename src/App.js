@@ -42385,6 +42385,29 @@ export default function App() {
       try { const d = JSON.parse(localStorage.getItem('atd_destinations') || "[]"); await SB.saveBlob('ventas', 'atd_destinations', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_providers') || "[]"); await SB.saveBlob('ventas', 'atd_providers', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_services') || "{}"); await SB.saveBlob('ventas', 'atd_services', d); } catch {}
+      // Sync only passengers with active ventas for portal
+      try {
+        const ventaEmails = new Set();
+        const ventaNames = new Set();
+        ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"].forEach(m => {
+          try {
+            const vs = JSON.parse(localStorage.getItem("ventas_2026_" + m) || "[]");
+            vs.forEach(v => {
+              if (v.clientEmail) ventaEmails.add(v.clientEmail.toLowerCase());
+              if (v.cliente) ventaNames.add(v.cliente.toLowerCase());
+            });
+          } catch {}
+        });
+        const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const paxPortal = allPax.filter(p =>
+          (p.email && ventaEmails.has(p.email.toLowerCase())) ||
+          (p.name && ventaNames.has(p.name.toLowerCase()))
+        );
+        if (paxPortal.length > 0) {
+          await SB.saveBlob('ventas', 'atd_passengers_portal', paxPortal);
+        }
+      } catch(e) { console.error("pax portal sync error:", e); }
+
       setSyncMsg("✓ Sincronizado");
       setTimeout(() => setSyncMsg(""), 3000);
     } catch(e) {
