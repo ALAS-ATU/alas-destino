@@ -38549,6 +38549,19 @@ function PassengerPortal({ onBack }) {
 function Dashboard({ quotes, payments, passengers, setView }) {
   const [busqueda, setBusqueda] = useState('');
   const [categoriaActiva, setCategoriaActiva] = useState('VENTAS');
+  const [alertasDone, setAlertasDone] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('atd_alertas_done') || '[]')); } catch { return new Set(); }
+  });
+
+  const alertaDoneKey = (a) => `${(a.cliente||'').trim()}|${a.tipo}|${a.fecha||''}`;
+
+  const marcarAlertaDone = (alerta) => {
+    const key = alertaDoneKey(alerta);
+    const nuevo = new Set(alertasDone);
+    nuevo.add(key);
+    setAlertasDone(nuevo);
+    localStorage.setItem('atd_alertas_done', JSON.stringify([...nuevo]));
+  };
   const ingresos = payments.filter(p => p.status === "Pagado").reduce((a, p) => a + p.amount, 0);
   const cotizacionesActivas = quotes.filter(q => q.status !== "Cancelada").length;
   const viajesConfirmados = quotes.filter(q => q.status === "Confirmada").length;
@@ -38664,6 +38677,9 @@ function Dashboard({ quotes, payments, passengers, setView }) {
     if (!vistos.has(key)) { vistos.add(key); alertasUnicas.push(a); }
   });
   alertasUnicas.sort((a, b) => a.diffDias - b.diffDias);
+
+  // Filtrar las marcadas como DONE
+  const alertasVisibles = alertasUnicas.filter(a => !alertasDone.has(alertaDoneKey(a)));
   const fmtFecha = f => {
     if (!f) return '';
     const partes = f.includes('-') ? f.split('-') : f.split('/').reverse();
@@ -38679,7 +38695,99 @@ function Dashboard({ quotes, payments, passengers, setView }) {
     return partes.split(' ')[0].trim();
   };
 
-  const generarTarjetaCumple = (alerta) => {
+  // Descarga la tarjeta de cumpleaños como JPG directamente (sin popup)
+  const descargarTarjetaCumple = (alerta) => {
+    const nombre = primerNombre(alerta.cliente);
+    const W = 420, H = 800;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Fondo blanco primero (necesario para JPEG, sin transparencia)
+    ctx.fillStyle = '#b02050';
+    ctx.fillRect(0, 0, W, H);
+
+    // Fondo degradado rosa coral
+    const grad = ctx.createLinearGradient(W*0.3, 0, 0, H);
+    grad.addColorStop(0, '#e85c7a');
+    grad.addColorStop(0.4, '#d44060');
+    grad.addColorStop(0.7, '#c03060');
+    grad.addColorStop(1, '#b02050');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Emojis decorativos arriba
+    ctx.font = '64px serif';
+    ctx.fillText('🎈', 10, 80);
+    ctx.fillText('🎈', 80, 50);
+    ctx.save();
+    ctx.translate(360, 70);
+    ctx.rotate(-0.26);
+    ctx.font = '80px serif';
+    ctx.fillText('✈️', 0, 0);
+    ctx.restore();
+
+    // Título principal
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1a2580';
+    ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+    ctx.fillText('ALAS A TU DESTINO', W/2+1, 271);
+    ctx.fillText('TE DESEA UN FELIZ', W/2+1, 311);
+    ctx.fillText('CUMPLEAÑOS', W/2+1, 351);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+    ctx.fillText('ALAS A TU DESTINO', W/2, 270);
+    ctx.fillText('TE DESEA UN FELIZ', W/2, 310);
+    ctx.fillText('CUMPLEAÑOS', W/2, 350);
+
+    // Nombre de pila grande
+    const nomSize = nombre.length > 8 ? 54 : 64;
+    ctx.font = `bold ${nomSize}px Arial Black, Arial, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(26,37,128,0.5)';
+    ctx.shadowBlur = 12; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 4;
+    ctx.fillText(`${nombre.toUpperCase()}!!!`, W/2, 450);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+    // Tagline
+    ctx.font = 'bold 17px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.9;
+    ctx.fillText('VIAJAR ENRIQUECE EL ALMA', W/2, 510);
+    ctx.globalAlpha = 1;
+
+    // Emoji corazón abajo derecha
+    ctx.textAlign = 'right';
+    ctx.font = '52px serif';
+    ctx.fillText('💕', W - 14, 570);
+
+    // Banda inferior "FELIZ CUMPLEAÑOS" repetido
+    ctx.fillStyle = 'rgba(26,37,128,0.18)';
+    ctx.fillRect(0, 595, W, H - 595);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 26px Arial Black, Arial, sans-serif';
+    ctx.fillStyle = '#1a2580';
+    ctx.globalAlpha = 0.55;
+    ['FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  '].forEach((t, i) => {
+      ctx.fillText(t, -10, 625 + i * 38);
+    });
+    ctx.globalAlpha = 1;
+
+    // Descargar como JPG directamente
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cumple_${nombre.toLowerCase().replace(/\s+/g,'_')}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    }, 'image/jpeg', 0.95);
+  };
+
+  // Abre WhatsApp con el número del pasajero (imagen se adjunta a mano)
+  const abrirWaCumple = (alerta) => {
     const nombre = primerNombre(alerta.cliente);
     let phone = '';
     try {
@@ -38687,164 +38795,9 @@ function Dashboard({ quotes, payments, passengers, setView }) {
       const pax = paxList.find(p => (p.name||'').includes(alerta.cliente) || alerta.cliente.includes(p.name||''));
       if (pax) phone = (pax.phone||pax.telefono||'').replace(/\D/g,'').replace(/^0/,'54').replace(/^(?!549)/,'549');
     } catch {}
-
     const waMsg = encodeURIComponent(`🎂 ¡Feliz cumpleaños ${nombre}! 🎉\n\nDesde Alas a tu Destino te deseamos un día increíble. ✈️\n\n_Viajar enriquece el alma_ 💕`);
     const waLink = phone ? `https://wa.me/${phone}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`;
-
-    // Genera PNG via Canvas y lo descarga. WhatsApp se abre ANTES del async para evitar bloqueo de popup
-    const drawAndShare = (openWa) => {
-      // Abrir WhatsApp ahora (contexto síncrono del click, no bloqueado)
-      if (openWa) window.open(waLink, '_blank');
-      const W = 420, H = 800;
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d');
-
-      // Fondo degradado rosa coral
-      const grad = ctx.createLinearGradient(W*0.3, 0, 0, H);
-      grad.addColorStop(0, '#e85c7a');
-      grad.addColorStop(0.4, '#d44060');
-      grad.addColorStop(0.7, '#c03060');
-      grad.addColorStop(1, '#b02050');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-
-      // Emojis decorativos arriba
-      ctx.font = '64px serif';
-      ctx.fillText('🎈', 10, 80);
-      ctx.fillText('🎈', 80, 50);
-      ctx.save();
-      ctx.translate(360, 70);
-      ctx.rotate(-0.26);
-      ctx.font = '80px serif';
-      ctx.fillText('✈️', 0, 0);
-      ctx.restore();
-
-      // Título principal
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#1a2580';
-      ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
-      ctx.fillText('ALAS A TU DESTINO', W/2+1, 271);
-      ctx.fillText('TE DESEA UN FELIZ', W/2+1, 311);
-      ctx.fillText('CUMPLEAÑOS', W/2+1, 351);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
-      ctx.fillText('ALAS A TU DESTINO', W/2, 270);
-      ctx.fillText('TE DESEA UN FELIZ', W/2, 310);
-      ctx.fillText('CUMPLEAÑOS', W/2, 350);
-
-      // Nombre de pila grande
-      const nomSize = nombre.length > 8 ? 54 : 64;
-      ctx.font = `bold ${nomSize}px Arial Black, Arial, sans-serif`;
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(26,37,128,0.5)';
-      ctx.shadowBlur = 12; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 4;
-      ctx.fillText(`${nombre.toUpperCase()}!!!`, W/2, 450);
-      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-
-      // Tagline
-      ctx.font = 'bold 17px Arial, sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.9;
-      ctx.fillText('VIAJAR ENRIQUECE EL ALMA', W/2, 510);
-      ctx.globalAlpha = 1;
-
-      // Emoji corazón abajo derecha
-      ctx.textAlign = 'right';
-      ctx.font = '52px serif';
-      ctx.fillText('💕', W - 14, 570);
-
-      // Banda inferior "FELIZ CUMPLEAÑOS" repetido
-      ctx.fillStyle = 'rgba(26,37,128,0.18)';
-      ctx.fillRect(0, 595, W, H - 595);
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 26px Arial Black, Arial, sans-serif';
-      ctx.fillStyle = '#1a2580';
-      ctx.globalAlpha = 0.55;
-      ['FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  '].forEach((t, i) => {
-        ctx.fillText(t, -10, 625 + i * 38);
-      });
-      ctx.globalAlpha = 1;
-
-      canvas.toBlob(blob => {
-        const url = URL.createObjectURL(blob);
-        // Descargar imagen
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `cumple_${nombre.toLowerCase()}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-      }, 'image/png');
-    };
-
-    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Feliz Cumpleaños ${nombre}</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Montserrat',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;overflow:hidden;background:#b02050}
-  .bg{position:fixed;inset:0;background:linear-gradient(160deg,#e85c7a 0%,#d44060 40%,#c03060 70%,#b02050 100%);z-index:0}
-  .card{position:relative;z-index:1;width:min(420px,100vw);min-height:calc(100vh - 64px);display:flex;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden}
-  .deco-top{width:100%;display:flex;justify-content:space-between;align-items:flex-start;padding:10px 10px 0;font-size:52px;line-height:1}
-  .plane{font-size:78px;transform:rotate(-15deg);filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))}
-  .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 24px;text-align:center;gap:14px}
-  .titulo{font-size:clamp(26px,8vw,36px);font-weight:900;color:#1a2580;text-shadow:2px 3px 0 rgba(255,255,255,.25),-1px -1px 0 #fff;line-height:1.15;letter-spacing:1px;text-transform:uppercase}
-  .nombre{font-size:clamp(40px,13vw,60px);font-weight:900;color:#fff;text-shadow:0 0 30px rgba(255,255,255,.5),2px 4px 0 rgba(26,37,128,.4);letter-spacing:2px;text-transform:uppercase;animation:pulse 1.5s ease-in-out infinite}
-  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-  .tagline{font-size:clamp(14px,4vw,17px);font-weight:700;color:#fff;letter-spacing:3px;text-transform:uppercase;opacity:.9}
-  .deco-bottom{width:100%;text-align:right;padding-right:16px;font-size:52px}
-  .repeat{width:100%;overflow:hidden;padding:10px 0 0;border-top:2px solid rgba(26,37,128,.2);background:rgba(26,37,128,.15)}
-  .repeat-text{font-size:clamp(18px,5vw,24px);font-weight:900;color:#1a2580;opacity:.55;white-space:nowrap;letter-spacing:2px;line-height:1.7;text-transform:uppercase;padding-left:8px}
-  .btns{position:fixed;bottom:0;left:0;right:0;display:flex;z-index:10;height:64px}
-  .btn{flex:1;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:'Montserrat',sans-serif;letter-spacing:.5px}
-  .btn-dl{background:#1a2580;color:#fff}
-  .btn-wa{background:#25d366;color:#fff}
-  @media print{.btns{display:none}}
-</style></head><body>
-<div class="bg"></div>
-<div class="card">
-  <div class="deco-top"><span>🎈</span><span>🎈</span><div class="plane">✈️</div></div>
-  <div class="main">
-    <div class="titulo">Alas a tu Destino<br>te desea un<br>Feliz Cumpleaños</div>
-    <div class="nombre">${nombre}!!!</div>
-    <div class="tagline">Viajar enriquece el alma</div>
-  </div>
-  <div class="deco-bottom">💕</div>
-  <div class="repeat">${'<div class="repeat-text">FELIZ CUMPLEAÑOS &nbsp;&nbsp;</div>'.repeat(5)}</div>
-</div>
-<div class="btns">
-  <button class="btn btn-dl" id="btnDl">📥 Descargar imagen</button>
-  <button class="btn btn-wa" id="btnWa">💬 Enviar por WhatsApp</button>
-</div>
-<script>
-  var waLink = "${waLink}";
-  document.getElementById('btnDl').onclick = function() {
-    window.opener && window.opener.postMessage('download','*');
-  };
-  document.getElementById('btnWa').onclick = function() {
-    // Abrir WA directamente desde el popup (contexto de click = no bloqueado)
     window.open(waLink, '_blank');
-    // También pedir descarga de imagen al parent
-    window.opener && window.opener.postMessage('download','*');
-  };
-</script>
-</body></html>`;
-
-    const w = window.open('', '_blank', 'width=480,height=820');
-    w.document.write(html);
-    w.document.close();
-
-    // Escuchar mensajes desde el popup
-    const handler = (e) => {
-      if (e.source !== w) return;
-      if (e.data === 'download') { drawAndShare(false); }
-    };
-    window.addEventListener('message', handler);
-    // Limpiar listener cuando se cierra el popup
-    const check = setInterval(() => { if (w.closed) { window.removeEventListener('message', handler); clearInterval(check); } }, 1000);
   };
 
   return (
@@ -38852,17 +38805,17 @@ function Dashboard({ quotes, payments, passengers, setView }) {
       {/* ALERTAS DE VENCIMIENTOS */}
       <div style={{ marginBottom: 24, border: `1.5px solid ${alertasUnicas.length > 0 ? '#e8334a' : '#1e2e6a'}`, borderRadius: 12, overflow: 'hidden' }}>
         <div style={{ background: alertasUnicas.length > 0 ? 'rgba(232,51,74,0.15)' : 'rgba(30,46,106,0.4)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>{alertasUnicas.length > 0 ? '🔔' : '✅'}</span>
-          <span style={{ fontWeight: 700, color: alertasUnicas.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
-            {alertasUnicas.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
+          <span style={{ fontSize: 20 }}>{alertasVisibles.length > 0 ? '🔔' : '✅'}</span>
+          <span style={{ fontWeight: 700, color: alertasVisibles.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
+            {alertasVisibles.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
           </span>
-          {alertasUnicas.length > 0 && (
-            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertasUnicas.length}</span>
+          {alertasVisibles.length > 0 && (
+            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertasVisibles.length}</span>
           )}
         </div>
-        {alertasUnicas.length > 0 && (
+        {alertasVisibles.length > 0 && (
           <div style={{ padding: '8px 0' }}>
-            {alertasUnicas.map((a, i) => (
+            {alertasVisibles.map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: a.bg, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>{labelDia(a.diffDias)}</div>
                 <div style={{ minWidth: 120, fontSize: 12, color: a.color, fontWeight: 600 }}>{a.tipo}</div>
@@ -38873,11 +38826,23 @@ function Dashboard({ quotes, payments, passengers, setView }) {
                 </div>
                 <div style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, fontFamily: 'monospace' }}>{a.esCumple ? fmtFecha(a.fecha) : fmtFechaCompleta(a.fecha)}</div>
                 {a.esCumple && (
-                  <button onClick={() => generarTarjetaCumple(a)} title="Ver tarjeta y enviar por WhatsApp"
-                    style={{ background: 'linear-gradient(135deg,#e85c7a,#c03060)', border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    🎂 Tarjeta
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => descargarTarjetaCumple(a)} title="Descargar tarjeta JPG"
+                      style={{ background: 'linear-gradient(135deg,#e85c7a,#c03060)', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      🎂 JPG
+                    </button>
+                    <button onClick={() => abrirWaCumple(a)} title="Abrir WhatsApp con el pasajero"
+                      style={{ background: '#25d366', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      💬 WA
+                    </button>
+                  </div>
                 )}
+                <button
+                  onClick={() => marcarAlertaDone(a)}
+                  title="Marcar como realizado"
+                  style={{ background: 'rgba(74,222,128,0.15)', border: '1.5px solid #4ade80', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#4ade80', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1 }}>
+                  ✓
+                </button>
               </div>
             ))}
           </div>
