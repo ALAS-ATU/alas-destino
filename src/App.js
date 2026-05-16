@@ -610,6 +610,321 @@ Object.entries(DESTINATIONS_DB).forEach(([continent, countries]) => {
   });
 });
 
+// Mapa IATA → { ciudad, país }
+const IATA_MAP = {
+  // Argentina
+  BUE:'Buenos Aires', AEP:'Buenos Aires (Aeroparque)', EZE:'Buenos Aires (Ezeiza)',
+  COR:'Córdoba', ROS:'Rosario', MDZ:'Mendoza', SLA:'Salta', BRC:'Bariloche',
+  USH:'Ushuaia', IGR:'Puerto Iguazú', MDQ:'Mar del Plata', TUC:'Tucumán',
+  NQN:'Neuquén', CRD:'Comodoro Rivadavia', PMY:'Puerto Madryn', BHI:'Bahía Blanca',
+  REL:'Trelew', RGL:'Río Gallegos', LGS:'Malargüe', JUJ:'Jujuy', CTC:'Catamarca',
+  // Brasil
+  GRU:'São Paulo (Guarulhos)', CGH:'São Paulo (Congonhas)', VCP:'São Paulo (Campinas)',
+  GIG:'Río de Janeiro (Galeão)', SDU:'Río de Janeiro (Santos Dumont)',
+  SSA:'Salvador', FOR:'Fortaleza', FLN:'Florianópolis', REC:'Recife',
+  NAT:'Natal', MCZ:'Maceió', POA:'Porto Alegre', MAO:'Manaos', BEL:'Belém',
+  BSB:'Brasilia', IGU:'Foz do Iguaçu',
+  // Resto Sudamérica
+  SCL:'Santiago', ANF:'Antofagasta', PMC:'Puerto Montt', IQQ:'Iquique', CCP:'Concepción',
+  MVD:'Montevideo', ASU:'Asunción', LIM:'Lima', BOG:'Bogotá', MDE:'Medellín',
+  CLO:'Cali', CTG:'Cartagena', UIO:'Quito', GYE:'Guayaquil', LPB:'La Paz',
+  VVI:'Santa Cruz de la Sierra', CCS:'Caracas', PMV:'Isla Margarita',
+  // México y Caribe
+  CUN:'Cancún', MEX:'Ciudad de México', GDL:'Guadalajara', SJO:'San José (CR)',
+  HAV:'La Habana', PUJ:'Punta Cana', SDQ:'Santo Domingo', SJU:'San Juan (PR)',
+  MBJ:'Montego Bay', BGI:'Bridgetown', UVF:'Santa Lucía',
+  // EE.UU.
+  MIA:'Miami', MCO:'Orlando', JFK:'Nueva York (JFK)', EWR:'Nueva York (Newark)',
+  LGA:'Nueva York (LaGuardia)', LAX:'Los Ángeles', LAS:'Las Vegas', ORD:'Chicago',
+  SFO:'San Francisco', BOS:'Boston', IAD:'Washington D.C.', MSY:'Nueva Orleans',
+  SEA:'Seattle', ATL:'Atlanta', DFW:'Dallas', DEN:'Denver', HOU:'Houston',
+  // Europa
+  MAD:'Madrid', BCN:'Barcelona', AGP:'Málaga', PMI:'Palma de Mallorca', VLC:'Valencia',
+  BIO:'Bilbao', SVQ:'Sevilla', LIS:'Lisboa', OPO:'Oporto', LHR:'Londres (Heathrow)',
+  LGW:'Londres (Gatwick)', STN:'Londres (Stansted)', CDG:'París (CDG)', ORY:'París (Orly)',
+  AMS:'Ámsterdam', FRA:'Frankfurt', MUC:'Múnich', DUS:'Düsseldorf', BER:'Berlín',
+  VIE:'Viena', ZRH:'Zúrich', GVA:'Ginebra', FCO:'Roma (Fiumicino)', CIA:'Roma (Ciampino)',
+  MXP:'Milán (Malpensa)', LIN:'Milán (Linate)', VCE:'Venecia', NAP:'Nápoles',
+  FLR:'Florencia', BLQ:'Bolonia', CTA:'Catania', PMO:'Palermo', ATH:'Atenas',
+  SKG:'Tesalónica', HER:'Heraklion', IST:'Estambul', SAW:'Estambul (Sabiha)',
+  SVO:'Moscú', BRU:'Bruselas', CPH:'Copenhague', ARN:'Estocolmo', HEL:'Helsinki',
+  OSL:'Oslo', WAW:'Varsovia', PRG:'Praga', BUD:'Budapest', OTP:'Bucarest',
+  // Medio Oriente y Asia
+  DXB:'Dubái', AUH:'Abu Dhabi', DOH:'Doha', TLV:'Tel Aviv',
+  BKK:'Bangkok', SIN:'Singapur', KUL:'Kuala Lumpur', HKG:'Hong Kong',
+  NRT:'Tokio (Narita)', HND:'Tokio (Haneda)', ICN:'Seúl', PEK:'Pekín', PVG:'Shanghái',
+  SYD:'Sídney', MEL:'Melbourne', AKL:'Auckland',
+  // África
+  CAI:'El Cairo', JNB:'Johannesburgo', CPT:'Ciudad del Cabo', NBO:'Nairobi',
+  CMN:'Casablanca', TUN:'Túnez', ALG:'Argel',
+};
+
+// Componente buscador de aeropuerto/ciudad para itinerario de vuelo
+function CiudadAeropuertoSearch({ value, onChange, placeholder }) {
+  const [texto, setTexto] = useState(value || '');
+  const [abierto, setAbierto] = useState(false);
+  const [opciones, setOpciones] = useState([]);
+  const [noEncontrado, setNoEncontrado] = useState(false);
+  const refInput = { current: null };
+
+  // Cargar ciudades custom del localStorage
+  const getCiudadesCustom = () => {
+    try { return JSON.parse(localStorage.getItem('atd_custom_cities') || '[]'); } catch { return []; }
+  };
+
+  const buscar = (q) => {
+    if (!q || q.trim().length < 1) { setOpciones([]); setNoEncontrado(false); setAbierto(false); return; }
+    const qn = q.trim().toLowerCase();
+    const resultados = [];
+
+    // 1. Buscar por código IATA exacto (mayúsculas)
+    const iataExacto = q.trim().toUpperCase();
+    if (IATA_MAP[iataExacto]) {
+      resultados.push({ label: `${iataExacto} — ${IATA_MAP[iataExacto]}`, valor: iataExacto, badge: 'IATA', prioridad: 0 });
+    }
+    // 2. Buscar IATA que contenga el texto
+    Object.entries(IATA_MAP).forEach(([codigo, ciudad]) => {
+      if (codigo.toLowerCase().includes(qn) || ciudad.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.valor === codigo)) {
+          resultados.push({ label: `${codigo} — ${ciudad}`, valor: codigo, badge: 'IATA', prioridad: 1 });
+        }
+      }
+    });
+    // 3. Buscar en ciudades del DESTINATIONS_DB
+    ALL_CITIES.forEach(({ city, country }) => {
+      if (city.toLowerCase().includes(qn) || country.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.label.includes(city))) {
+          resultados.push({ label: `${city}`, sub: country, valor: city, badge: 'Destino', prioridad: 2 });
+        }
+      }
+    });
+    // 4. Ciudades custom
+    getCiudadesCustom().forEach(c => {
+      if (c.nombre.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.valor === c.nombre)) {
+          resultados.push({ label: c.nombre, sub: c.pais || '', valor: c.nombre, badge: '★ Custom', prioridad: 3 });
+        }
+      }
+    });
+
+    resultados.sort((a, b) => a.prioridad - b.prioridad);
+    setOpciones(resultados.slice(0, 12));
+    setNoEncontrado(resultados.length === 0);
+    setAbierto(true);
+  };
+
+  const seleccionar = (opcion) => {
+    setTexto(opcion.valor);
+    onChange(opcion.valor);
+    setAbierto(false);
+    setOpciones([]);
+    setNoEncontrado(false);
+  };
+
+  const agregarCiudad = () => {
+    const nombre = texto.trim();
+    if (!nombre) return;
+    const custom = getCiudadesCustom();
+    if (!custom.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+      const nueva = { nombre, pais: 'Personalizado', continente: 'Otros' };
+      const actualizado = [...custom, nueva];
+      localStorage.setItem('atd_custom_cities', JSON.stringify(actualizado));
+      // También agregar a ALL_CITIES en memoria
+      if (!ALL_CITIES.find(c => c.city.toLowerCase() === nombre.toLowerCase())) {
+        ALL_CITIES.push({ city: nombre, country: 'Personalizado', continent: 'Otros' });
+      }
+    }
+    onChange(nombre);
+    setAbierto(false);
+    setNoEncontrado(false);
+  };
+
+  const badgeColor = (b) => b === 'IATA' ? '#60a5fa' : b === '★ Custom' ? '#fbbf24' : '#4ade80';
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        style={{ background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '6px 10px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }}
+        value={texto}
+        placeholder={placeholder || 'BUE, Salvador, Madrid...'}
+        onChange={e => { setTexto(e.target.value); onChange(e.target.value); buscar(e.target.value); }}
+        onFocus={e => { if (texto) buscar(texto); }}
+        onBlur={() => setTimeout(() => { setAbierto(false); setNoEncontrado(false); }, 180)}
+      />
+      {(abierto && (opciones.length > 0 || noEncontrado)) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 2, maxHeight: 260, overflowY: 'auto' }}>
+          {opciones.map((op, i) => (
+            <div key={i} onMouseDown={() => seleccionar(op)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.12)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 10, background: `rgba(${badgeColor(op.badge).replace('#','')},0.15)`, color: badgeColor(op.badge), borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', minWidth: 38, textAlign: 'center' }}>{op.badge}</span>
+              <span style={{ fontSize: 13, color: '#c8d4f0', fontWeight: 600 }}>{op.label}</span>
+              {op.sub && <span style={{ fontSize: 11, color: '#5060a0', marginLeft: 2 }}>{op.sub}</span>}
+            </div>
+          ))}
+          {noEncontrado && (
+            <div style={{ padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 8 }}>
+                "{texto}" no está en la base de destinos
+              </div>
+              <button onMouseDown={agregarCiudad}
+                style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 6, padding: '5px 12px', color: '#4ade80', fontSize: 12, fontFamily: 'system-ui', cursor: 'pointer', fontWeight: 600 }}>
+                ✚ Agregar "{texto}" a Destinos
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Helper: código IATA de ciudad → nombre legible (para Portal del Pasajero)
+const resolverCiudad = (codigo) => {
+  if (!codigo) return '';
+  const enMapa = IATA_MAP[codigo.toUpperCase()];
+  if (enMapa) return `${enMapa} (${codigo.toUpperCase()})`;
+  // Buscar en ALL_CITIES por si es nombre directo
+  const enCities = ALL_CITIES.find(c => c.city.toLowerCase() === codigo.toLowerCase());
+  if (enCities) return enCities.city;
+  // Custom
+  try {
+    const custom = JSON.parse(localStorage.getItem('atd_custom_cities') || '[]');
+    const c = custom.find(x => x.nombre.toLowerCase() === codigo.toLowerCase());
+    if (c) return c.nombre;
+  } catch {}
+  return codigo;
+};
+
+// Mapa IATA de aerolíneas → nombre completo
+const AEROLINEA_MAP = {
+  // Argentina
+  AR:'Aerolíneas Argentinas', AU:'Austral', JA:'JetSMART Argentina', FO:'Flybondi',
+  // Latinoamérica
+  LA:'LATAM Airlines', JJ:'LATAM Brasil', LP:'LATAM Perú', XL:'LATAM Ecuador',
+  CM:'Copa Airlines', AV:'Avianca', VH:'Avianca Honduras', O6:'Avianca Brasil',
+  G3:'GOL Linhas Aéreas', AD:'Azul Linhas Aéreas', P9:'Peruvian Airlines',
+  H6:'Transportes Aéreos Bolivarianos', PZ:'TAM Paraguay', T4:'TACA Regional',
+  '4M':'LATAM Argentina', AM:'Aeroméxico', VB:'VivaAerobus', Y4:'Volaris',
+  // EE.UU.
+  AA:'American Airlines', UA:'United Airlines', DL:'Delta Air Lines',
+  B6:'JetBlue Airways', WN:'Southwest Airlines', NK:'Spirit Airlines',
+  F9:'Frontier Airlines', AS:'Alaska Airlines', HA:'Hawaiian Airlines',
+  // Europa
+  IB:'Iberia', VY:'Vueling', UX:'Air Europa', I2:'Iberia Express',
+  TP:'TAP Air Portugal', AF:'Air France', KL:'KLM', LH:'Lufthansa',
+  BA:'British Airways', EZY:'easyJet', FR:'Ryanair', U2:'easyJet',
+  AZ:'ITA Airways', LX:'Swiss', OS:'Austrian Airlines', SK:'SAS',
+  AY:'Finnair', W6:'Wizz Air', A3:'Aegean Airlines', PS:'Ukraine Intl',
+  SN:'Brussels Airlines', BT:'airBaltic', TK:'Turkish Airlines',
+  // Medio Oriente
+  EK:'Emirates', QR:'Qatar Airways', EY:'Etihad Airways', GF:'Gulf Air',
+  SV:'Saudia', MS:'EgyptAir', RJ:'Royal Jordanian',
+  // Asia/Oceanía
+  SQ:'Singapore Airlines', CX:'Cathay Pacific', JL:'Japan Airlines',
+  NH:'ANA All Nippon', KE:'Korean Air', OZ:'Asiana Airlines',
+  CA:'Air China', MU:'China Eastern', CZ:'China Southern',
+  TG:'Thai Airways', QF:'Qantas', NZ:'Air New Zealand',
+  // África
+  ET:'Ethiopian Airlines', SA:'South African Airways', MS2:'EgyptAir',
+  // Otros / Low cost
+  W2:'FlexFlight', PC:'Pegasus Airlines', VJ:'VietJet Air',
+};
+
+// Componente buscador de aerolínea por código IATA
+function AerolineaSearch({ value, onChange }) {
+  const [texto, setTexto] = useState(value || '');
+  const [abierto, setAbierto] = useState(false);
+  const [opciones, setOpciones] = useState([]);
+  const [noEncontrado, setNoEncontrado] = useState(false);
+
+  const buscar = (q) => {
+    if (!q || q.trim().length < 1) { setOpciones([]); setNoEncontrado(false); setAbierto(false); return; }
+    const qn = q.trim().toLowerCase();
+    const resultados = [];
+    Object.entries(AEROLINEA_MAP).forEach(([codigo, nombre]) => {
+      if (codigo.toLowerCase().includes(qn) || nombre.toLowerCase().includes(qn)) {
+        resultados.push({ codigo, nombre });
+      }
+    });
+    resultados.sort((a, b) => {
+      const ac = a.codigo.toLowerCase().startsWith(qn) ? 0 : 1;
+      const bc = b.codigo.toLowerCase().startsWith(qn) ? 0 : 1;
+      return ac - bc;
+    });
+    setOpciones(resultados.slice(0, 10));
+    setNoEncontrado(resultados.length === 0);
+    setAbierto(true);
+  };
+
+  const seleccionar = (codigo) => {
+    setTexto(codigo);
+    onChange(codigo);
+    setAbierto(false);
+    setOpciones([]);
+    setNoEncontrado(false);
+  };
+
+  const agregarAerolinea = () => {
+    const cod = texto.trim().toUpperCase();
+    if (!cod) return;
+    // Guardar en localStorage como aerolínea custom
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_airlines') || '{}');
+      if (!custom[cod]) {
+        custom[cod] = cod;
+        localStorage.setItem('atd_custom_airlines', JSON.stringify(custom));
+        AEROLINEA_MAP[cod] = cod;
+      }
+    } catch {}
+    onChange(cod);
+    setAbierto(false);
+    setNoEncontrado(false);
+  };
+
+  const nombreMostrado = (cod) => AEROLINEA_MAP[cod] || cod;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        style={{ background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '6px 10px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }}
+        value={texto}
+        placeholder="AR, LA, AA..."
+        onChange={e => { setTexto(e.target.value); onChange(e.target.value); buscar(e.target.value); }}
+        onFocus={() => { if (texto) buscar(texto); }}
+        onBlur={() => setTimeout(() => { setAbierto(false); setNoEncontrado(false); }, 180)}
+      />
+      {texto && AEROLINEA_MAP[texto.trim().toUpperCase()] && (
+        <div style={{ fontSize: 10, color: '#4ade80', fontFamily: 'system-ui', marginTop: 2, paddingLeft: 2 }}>
+          ✓ {nombreMostrado(texto.trim().toUpperCase())}
+        </div>
+      )}
+      {(abierto && (opciones.length > 0 || noEncontrado)) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 2, maxHeight: 220, overflowY: 'auto' }}>
+          {opciones.map((op, i) => (
+            <div key={i} onMouseDown={() => seleccionar(op.codigo)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.12)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 11, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px', fontWeight: 700, minWidth: 28, textAlign: 'center' }}>{op.codigo}</span>
+              <span style={{ fontSize: 13, color: '#c8d4f0' }}>{op.nombre}</span>
+            </div>
+          ))}
+          {noEncontrado && (
+            <div style={{ padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: '#7080b0', marginBottom: 8 }}>"{texto}" no encontrado</div>
+              <button onMouseDown={agregarAerolinea}
+                style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 6, padding: '5px 12px', color: '#4ade80', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                ✚ Agregar "{texto.toUpperCase()}"
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================
 // SUPABASE CONFIG
@@ -37776,9 +38091,9 @@ const S = {
   logo: { padding: "28px 24px 20px", borderBottom: "1px solid #1e2a3a" },
   logoText: { fontSize: 20, fontWeight: 700, color: "#e8334a", letterSpacing: "0.05em", lineHeight: 1.2 },
   logoSub: { fontSize: 11, color: "#7080b0", letterSpacing: "0.15em", textTransform: "uppercase", marginTop: 4, fontFamily: "system-ui, sans-serif" },
-  nav: { padding: "16px 0", flex: 1 },
-  navSection: { padding: "8px 16px 4px", fontSize: 10, color: "#3a4a80", letterSpacing: "0.2em", textTransform: "uppercase", fontFamily: "system-ui, sans-serif" },
-  navItem: (active) => ({ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", cursor: "pointer", borderRadius: "0 20px 20px 0", margin: "2px 12px 2px 0", transition: "all 0.2s", background: active ? "linear-gradient(90deg, #e8334a 0%, #c41f36 100%)" : "transparent", color: active ? "#0f1535" : "#8899cc", fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: active ? 700 : 400, borderLeft: active ? "3px solid #d4a843" : "3px solid transparent" }),
+  nav: { padding: "12px 0", flex: 1, overflowY: "auto", overflowX: "hidden" },
+  navSection: { padding: "6px 16px 3px", fontSize: 10, color: "#3a4a80", letterSpacing: "0.2em", textTransform: "uppercase", fontFamily: "system-ui, sans-serif" },
+  navItem: (active) => ({ display: "flex", alignItems: "center", gap: 10, padding: "8px 20px", cursor: "pointer", borderRadius: "0 20px 20px 0", margin: "1px 12px 1px 0", transition: "all 0.2s", background: active ? "linear-gradient(90deg, #e8334a 0%, #c41f36 100%)" : "transparent", color: active ? "#0f1535" : "#8899cc", fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: active ? 700 : 400, borderLeft: active ? "3px solid #d4a843" : "3px solid transparent" }),
   navIcon: { fontSize: 15, width: 18, textAlign: "center" },
   header: { padding: "24px 32px 20px", borderBottom: "1px solid #1a2332", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#111d3c" },
   headerTitle: { fontSize: 26, fontWeight: 700, color: "#ffffff", letterSpacing: "-0.02em" },
@@ -37946,11 +38261,34 @@ function PassengerPortal({ onBack }) {
 
     ${servicios.length > 0 ? `
     <h2>🎫 Servicios Incluidos</h2>
-    ${servicios.map(s => `
-      <div class="svc">
-        <div><div class="svc-tipo">${s.tipo}</div><div class="svc-name">${s.descripcion}</div></div>
-        ${s.precio > 0 ? `<div class="svc-precio">$${Number(s.precio).toLocaleString()} ${s.moneda||'USD'}</div>` : '<div style="color:#4ade80;font-weight:700;font-size:13px">✓ Incluido</div>'}
-      </div>`).join('')}` : ''}
+    ${servicios.map(s => {
+      const segsVuelo = s.tipo === 'Vuelo' && (s.segmentosVuelo||[]).length > 0 ? s.segmentosVuelo : [];
+      const itinerarioHtml = segsVuelo.map((seg, idx) => {
+        const lbl = s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? 'IDA' : 'VUELTA') : `TRAMO ${idx+1}`;
+        const ciudadO = resolverCiudad(seg.origen);
+        const ciudadD = resolverCiudad(seg.destino);
+        const fechaFmt = seg.fechaSalida ? seg.fechaSalida.split('-').reverse().join('/') : '';
+        const aeroNombre = seg.aerolinea ? (AEROLINEA_MAP[seg.aerolinea.toUpperCase()] || seg.aerolinea) : '';
+        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #eee">
+          <div style="background:#e8334a;color:#fff;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;margin-top:2px">${lbl}</div>
+          <div>
+            <div style="font-weight:700;color:#1a2580;font-size:13px">${ciudadO} → ${ciudadD}</div>
+            <div style="font-size:11px;color:#7080b0;margin-top:2px">
+              ${fechaFmt ? `📅 ${fechaFmt}${seg.horaSalida ? ' · ' + seg.horaSalida + 'hs' : ''}` : ''}
+              ${aeroNombre ? ` &nbsp;·&nbsp; ✈ ${seg.aerolinea?.toUpperCase()} ${aeroNombre}` : ''}
+              ${seg.numeroVuelo ? ` &nbsp;·&nbsp; <strong>Vuelo ${seg.numeroVuelo}</strong>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="svc" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${itinerarioHtml ? '10px' : '0'}">
+          <div><div class="svc-tipo">${s.tipo}${s.tipoRuta ? ' · ' + s.tipoRuta : ''}</div><div class="svc-name">${s.descripcion}</div></div>
+          ${s.precio > 0 ? `<div class="svc-precio">$${Number(s.precio).toLocaleString()} ${s.moneda||'USD'}</div>` : '<div style="color:#1a7a3a;font-weight:700;font-size:13px">✓ Incluido</div>'}
+        </div>
+        ${itinerarioHtml ? `<div style="background:#f0f4ff;border-radius:6px;padding:8px 12px">${itinerarioHtml}</div>` : ''}
+      </div>`;
+    }).join('')}` : ''}
 
     <div class="total-box">
       <div><div class="total-lbl">Total de tu viaje</div><div class="total-val">$${(venta.monto||0).toLocaleString()} USD</div></div>
@@ -38108,20 +38446,23 @@ function PassengerPortal({ onBack }) {
                                 : <div style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>✓ Inc.</div>
                               }
                             </div>
-                            {(s.docs||[]).length > 0 && (
-                              <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 8, marginTop: 8 }}>
-                                <div style={{ fontSize: 11, color: "#7080b0", marginBottom: 6 }}>📎 Documentación</div>
+                            <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 8, marginTop: 8 }}>
+                                <div style={{ fontSize: 11, color: "#7080b0", marginBottom: 6 }}>📎 Voucher</div>
                                 {pagoCompleto ? (
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                    {(s.docs||[]).map((doc, di) => (
-                                      <a key={di} href={doc.data} download={doc.name}
-                                        style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 8, padding: "6px 12px", textDecoration: "none" }}>
-                                        <span>{doc.name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
-                                        <span style={{ fontSize: 12, color: "#4ade80", fontFamily: "system-ui", fontWeight: 600 }}>{doc.name}</span>
-                                        <span style={{ fontSize: 11, color: "#7080b0" }}>⬇</span>
-                                      </a>
-                                    ))}
-                                  </div>
+                                  (s.vouchers||[]).length > 0 ? (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {(s.vouchers||[]).map((doc, di) => (
+                                        <a key={di} href={doc.data} download={doc.name}
+                                          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 8, padding: "6px 12px", textDecoration: "none" }}>
+                                          <span>{doc.name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
+                                          <span style={{ fontSize: 12, color: "#4ade80", fontFamily: "system-ui", fontWeight: 600 }}>{doc.name}</span>
+                                          <span style={{ fontSize: 11, color: "#7080b0" }}>⬇</span>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: 12, color: "#7080b0", fontFamily: "system-ui", fontStyle: "italic" }}>Documento en preparación</div>
+                                  )
                                 ) : (
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(251,191,36,0.08)", borderRadius: 8, border: "1px solid rgba(251,191,36,0.2)" }}>
                                     <span>🔒</span>
@@ -38129,7 +38470,6 @@ function PassengerPortal({ onBack }) {
                                   </div>
                                 )}
                               </div>
-                            )}
                           </div>
                         );})}
                       </div>
@@ -38206,7 +38546,22 @@ function PassengerPortal({ onBack }) {
 // ============================================================
 // ADMIN MODULE COMPONENTS
 // ============================================================
-function Dashboard({ quotes, payments, passengers }) {
+function Dashboard({ quotes, payments, passengers, setView }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [categoriaActiva, setCategoriaActiva] = useState('VENTAS');
+  const [alertasDone, setAlertasDone] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('atd_alertas_done') || '[]')); } catch { return new Set(); }
+  });
+
+  const alertaDoneKey = (a) => `${(a.cliente||'').trim()}|${a.tipo}|${a.fecha||''}`;
+
+  const marcarAlertaDone = (alerta) => {
+    const key = alertaDoneKey(alerta);
+    const nuevo = new Set(alertasDone);
+    nuevo.add(key);
+    setAlertasDone(nuevo);
+    localStorage.setItem('atd_alertas_done', JSON.stringify([...nuevo]));
+  };
   const ingresos = payments.filter(p => p.status === "Pagado").reduce((a, p) => a + p.amount, 0);
   const cotizacionesActivas = quotes.filter(q => q.status !== "Cancelada").length;
   const viajesConfirmados = quotes.filter(q => q.status === "Confirmada").length;
@@ -38216,8 +38571,284 @@ function Dashboard({ quotes, payments, passengers }) {
     { label: "Pasajeros Totales", value: String(passengers.length), icon: "👥", sub: "Registrados" },
     { label: "Viajes Confirmados", value: String(viajesConfirmados), icon: "✈️", sub: "Cotizaciones confirmadas" },
   ];
+
+  // === VENCIMIENTOS PRÓXIMOS (2 días) ===
+  const MESES_KEYS = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"].map(m => `ventas_2026_${m}`);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const alertas = [];
+
+  // Helper: días hasta un cumpleaños este año (o el próximo si ya pasó)
+  const diasHastaCumple = (fechaNac) => {
+    if (!fechaNac) return null;
+    try {
+      const partes = fechaNac.includes('-') ? fechaNac.split('-') : fechaNac.split('/').reverse();
+      const mes = parseInt(partes[1]) - 1;
+      const dia = parseInt(partes[2] || partes[0]);
+      const cumpleEsteAnio = new Date(hoy.getFullYear(), mes, dia); cumpleEsteAnio.setHours(0,0,0,0);
+      if (cumpleEsteAnio < hoy) cumpleEsteAnio.setFullYear(hoy.getFullYear() + 1);
+      return Math.round((cumpleEsteAnio - hoy) / 86400000);
+    } catch { return null; }
+  };
+
+  // Vencimientos de pagos en ventas
+  MESES_KEYS.forEach(key => {
+    try {
+      const ventas = JSON.parse(localStorage.getItem(key) || '[]');
+      ventas.forEach(v => {
+        // Alertas de salida de vuelos (web check-in 48hs antes)
+        (v.servicios || []).filter(s => s.tipo === 'Vuelo').forEach(s => {
+          (s.segmentosVuelo || []).forEach(seg => {
+            if (!seg.fechaSalida) return;
+            const salida = new Date(`${seg.fechaSalida}T${seg.horaSalida || '00:00'}`);
+            const diffHs = (salida - new Date()) / 3600000;
+            if (diffHs >= 0 && diffHs <= 48) {
+              const diffDias = diffHs < 24 ? 0 : 1;
+              alertas.push({
+                cliente: v.cliente,
+                ventaId: v.ventaId,
+                servicio: `${resolverCiudad(seg.origen) || seg.origen || '?'} → ${resolverCiudad(seg.destino) || seg.destino || '?'}${seg.aerolinea ? ' · ' + seg.aerolinea.toUpperCase() : ''}${seg.numeroVuelo ? ' ' + seg.numeroVuelo : ''}${seg.horaSalida ? ' · ' + seg.horaSalida + 'hs' : ''}`,
+                tipo: '✈️ Salida vuelo',
+                color: '#38bdf8',
+                bg: 'rgba(56,189,248,0.10)',
+                fecha: seg.fechaSalida,
+                diffDias,
+                esVuelo: true,
+              });
+            }
+          });
+        });
+
+        // Fechas de pago por servicio
+        (v.servicios || []).forEach(s => {
+          [
+            { campo: 'fechaSeñaCliente',    tipo: '⚡ Seña cliente',    color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
+            { campo: 'fechaSaldoCliente',   tipo: '💰 Saldo cliente',   color: '#4ade80', bg: 'rgba(74,222,128,0.10)' },
+            { campo: 'fechaSeñaProveedor',  tipo: '🔵 Seña proveedor',  color: '#60a5fa', bg: 'rgba(96,165,250,0.10)' },
+            { campo: 'fechaSaldoProveedor', tipo: '🟣 Saldo proveedor', color: '#a78bfa', bg: 'rgba(167,139,250,0.10)' },
+          ].forEach(({ campo, tipo, color, bg }) => {
+            if (!s[campo]) return;
+            const fecha = new Date(s[campo]); fecha.setHours(0,0,0,0);
+            const diffDias = Math.round((fecha - hoy) / 86400000);
+            if (diffDias >= 0 && diffDias <= 2) {
+              alertas.push({ cliente: v.cliente, ventaId: v.ventaId, servicio: s.descripcion || s.tipo || '', tipo, color, bg, fecha: s[campo], diffDias });
+            }
+          });
+        });
+        // Cumpleaños de pasajeros en la venta
+        (v.pasajeros || []).forEach(p => {
+          const diff = diasHastaCumple(p.nacimiento);
+          if (diff !== null && diff >= 0 && diff <= 2) {
+            alertas.push({
+              cliente: p.nombre || p.name || '',
+              ventaId: v.ventaId,
+              servicio: `🎂 Cumpleaños`,
+              tipo: '🎂 Cumpleaños',
+              color: '#f472b6',
+              bg: 'rgba(244,114,182,0.10)',
+              fecha: p.nacimiento,
+              diffDias: diff,
+              esCumple: true,
+            });
+          }
+        });
+      });
+    } catch {}
+  });
+
+  // Cumpleaños de pasajeros marcados manualmente con 🔔 en el módulo Pasajeros
+  try {
+    const globalPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+    const yaAgregados = new Set(alertas.filter(a => a.esCumple).map(a => a.cliente));
+    globalPax.filter(p => p.alertaCumple).forEach(p => {
+      const nombre = p.name || p.nombre || '';
+      if (yaAgregados.has(nombre)) return;
+      const diff = diasHastaCumple(p.birthdate || p.nacimiento);
+      if (diff !== null && diff >= 0 && diff <= 2) {
+        alertas.push({ cliente: nombre, ventaId: '', servicio: '🎂 Cumpleaños', tipo: '🎂 Cumpleaños', color: '#f472b6', bg: 'rgba(244,114,182,0.10)', fecha: p.birthdate || p.nacimiento, diffDias: diff, esCumple: true });
+      }
+    });
+  } catch {}
+
+  // Deduplicar: mismo pasajero + mismo tipo de alerta → quedarse con uno solo
+  const alertasUnicas = [];
+  const vistos = new Set();
+  alertas.forEach(a => {
+    const key = `${(a.cliente||'').toLowerCase().trim()}|${a.tipo}`;
+    if (!vistos.has(key)) { vistos.add(key); alertasUnicas.push(a); }
+  });
+  alertasUnicas.sort((a, b) => a.diffDias - b.diffDias);
+
+  // Filtrar las marcadas como DONE
+  const alertasVisibles = alertasUnicas.filter(a => !alertasDone.has(alertaDoneKey(a)));
+  const fmtFecha = f => {
+    if (!f) return '';
+    const partes = f.includes('-') ? f.split('-') : f.split('/').reverse();
+    return `${partes[2] || partes[0]}/${partes[1]}`;
+  };
+  const fmtFechaCompleta = f => f ? f.split('-').reverse().join('/') : '';
+  const labelDia = d => d === 0 ? '🔴 HOY' : d === 1 ? '🟠 MAÑANA' : '🟡 En 2 días';
+
+  // Extrae nombre de pila: "CORREA SOTO, EMANUEL MATIAS" → "EMANUEL"
+  const primerNombre = (nombreCompleto) => {
+    if (!nombreCompleto) return '';
+    const partes = nombreCompleto.includes(',') ? nombreCompleto.split(',')[1].trim() : nombreCompleto;
+    return partes.split(' ')[0].trim();
+  };
+
+  // Descarga la tarjeta de cumpleaños como JPG directamente (sin popup)
+  const descargarTarjetaCumple = (alerta) => {
+    const nombre = primerNombre(alerta.cliente);
+    const W = 420, H = 800;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Fondo blanco primero (necesario para JPEG, sin transparencia)
+    ctx.fillStyle = '#b02050';
+    ctx.fillRect(0, 0, W, H);
+
+    // Fondo degradado rosa coral
+    const grad = ctx.createLinearGradient(W*0.3, 0, 0, H);
+    grad.addColorStop(0, '#e85c7a');
+    grad.addColorStop(0.4, '#d44060');
+    grad.addColorStop(0.7, '#c03060');
+    grad.addColorStop(1, '#b02050');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Emojis decorativos arriba
+    ctx.font = '64px serif';
+    ctx.fillText('🎈', 10, 80);
+    ctx.fillText('🎈', 80, 50);
+    ctx.save();
+    ctx.translate(360, 70);
+    ctx.rotate(-0.26);
+    ctx.font = '80px serif';
+    ctx.fillText('✈️', 0, 0);
+    ctx.restore();
+
+    // Título principal
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1a2580';
+    ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+    ctx.fillText('ALAS A TU DESTINO', W/2+1, 271);
+    ctx.fillText('TE DESEA UN FELIZ', W/2+1, 311);
+    ctx.fillText('CUMPLEAÑOS', W/2+1, 351);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+    ctx.fillText('ALAS A TU DESTINO', W/2, 270);
+    ctx.fillText('TE DESEA UN FELIZ', W/2, 310);
+    ctx.fillText('CUMPLEAÑOS', W/2, 350);
+
+    // Nombre de pila grande
+    const nomSize = nombre.length > 8 ? 54 : 64;
+    ctx.font = `bold ${nomSize}px Arial Black, Arial, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(26,37,128,0.5)';
+    ctx.shadowBlur = 12; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 4;
+    ctx.fillText(`${nombre.toUpperCase()}!!!`, W/2, 450);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+    // Tagline
+    ctx.font = 'bold 17px Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.9;
+    ctx.fillText('VIAJAR ENRIQUECE EL ALMA', W/2, 510);
+    ctx.globalAlpha = 1;
+
+    // Emoji corazón abajo derecha
+    ctx.textAlign = 'right';
+    ctx.font = '52px serif';
+    ctx.fillText('💕', W - 14, 570);
+
+    // Banda inferior "FELIZ CUMPLEAÑOS" repetido
+    ctx.fillStyle = 'rgba(26,37,128,0.18)';
+    ctx.fillRect(0, 595, W, H - 595);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 26px Arial Black, Arial, sans-serif';
+    ctx.fillStyle = '#1a2580';
+    ctx.globalAlpha = 0.55;
+    ['FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  '].forEach((t, i) => {
+      ctx.fillText(t, -10, 625 + i * 38);
+    });
+    ctx.globalAlpha = 1;
+
+    // Descargar como JPG directamente
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cumple_${nombre.toLowerCase().replace(/\s+/g,'_')}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    }, 'image/jpeg', 0.95);
+  };
+
+  // Abre WhatsApp con el número del pasajero (imagen se adjunta a mano)
+  const abrirWaCumple = (alerta) => {
+    const nombre = primerNombre(alerta.cliente);
+    let phone = '';
+    try {
+      const paxList = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      const pax = paxList.find(p => (p.name||'').includes(alerta.cliente) || alerta.cliente.includes(p.name||''));
+      if (pax) phone = (pax.phone||pax.telefono||'').replace(/\D/g,'').replace(/^0/,'54').replace(/^(?!549)/,'549');
+    } catch {}
+    const waMsg = encodeURIComponent(`🎂 ¡Feliz cumpleaños ${nombre}! 🎉\n\nDesde Alas a tu Destino te deseamos un día increíble. ✈️\n\n_Viajar enriquece el alma_ 💕`);
+    const waLink = phone ? `https://wa.me/${phone}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`;
+    window.open(waLink, '_blank');
+  };
+
   return (
     <div>
+      {/* ALERTAS DE VENCIMIENTOS */}
+      <div style={{ marginBottom: 24, border: `1.5px solid ${alertasUnicas.length > 0 ? '#e8334a' : '#1e2e6a'}`, borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ background: alertasUnicas.length > 0 ? 'rgba(232,51,74,0.15)' : 'rgba(30,46,106,0.4)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>{alertasVisibles.length > 0 ? '🔔' : '✅'}</span>
+          <span style={{ fontWeight: 700, color: alertasVisibles.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
+            {alertasVisibles.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
+          </span>
+          {alertasVisibles.length > 0 && (
+            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertasVisibles.length}</span>
+          )}
+        </div>
+        {alertasVisibles.length > 0 && (
+          <div style={{ padding: '8px 0' }}>
+            {alertasVisibles.map((a, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: a.bg, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>{labelDia(a.diffDias)}</div>
+                <div style={{ minWidth: 120, fontSize: 12, color: a.color, fontWeight: 600 }}>{a.tipo}</div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>{a.cliente}</span>
+                  {a.ventaId && <span style={{ marginLeft: 8, fontSize: 11, color: '#3a4a80', fontFamily: 'monospace' }}>{a.ventaId}</span>}
+                  <span style={{ marginLeft: 8, fontSize: 12, color: '#7080b0' }}>{a.servicio}</span>
+                </div>
+                <div style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, fontFamily: 'monospace' }}>{a.esCumple ? fmtFecha(a.fecha) : fmtFechaCompleta(a.fecha)}</div>
+                {a.esCumple && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => descargarTarjetaCumple(a)} title="Descargar tarjeta JPG"
+                      style={{ background: 'linear-gradient(135deg,#e85c7a,#c03060)', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      🎂 JPG
+                    </button>
+                    <button onClick={() => abrirWaCumple(a)} title="Abrir WhatsApp con el pasajero"
+                      style={{ background: '#25d366', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      💬 WA
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={() => marcarAlertaDone(a)}
+                  title="Marcar como realizado"
+                  style={{ background: 'rgba(74,222,128,0.15)', border: '1.5px solid #4ade80', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#4ade80', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1 }}>
+                  ✓
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
         {stats.map((s, i) => (
           <div key={i} style={S.statCard}>
@@ -38228,40 +38859,269 @@ function Dashboard({ quotes, payments, passengers }) {
           </div>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div style={S.card}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#e8334a", marginBottom: 16 }}>Últimas Cotizaciones</h3>
-          <table style={S.table}>
-            <thead><tr>{["Cliente", "Destino", "Total", "Estado"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {initialQuotes.map(q => (
-                <tr key={q.id}>
-                  <td style={S.td}>{q.client}</td>
-                  <td style={S.td}>{q.destination}</td>
-                  <td style={{ ...S.td, color: "#e8334a", fontWeight: 700 }}>${q.total.toLocaleString()}</td>
-                  <td style={S.td}><span style={S.badge(q.status === "Confirmada" ? "green" : q.status === "Pendiente" ? "yellow" : "blue")}>{q.status}</span></td>
-                </tr>
+
+      {/* ===== BUSCADOR GLOBAL ===== */}
+      {(() => {
+        const CATS = [
+          { id: 'VENTAS',       label: 'Ventas',       icon: '🧾' },
+          { id: 'PROVEEDORES',  label: 'Proveedores',  icon: '🏢' },
+          { id: 'COTIZACIONES', label: 'Cotizaciones', icon: '📋' },
+          { id: 'PASAJEROS',    label: 'Pasajeros',    icon: '👤' },
+        ];
+
+        // Recolectar todas las ventas con su mes/key de origen
+        const todasLasVentas = [];
+        MESES_KEYS.forEach(key => {
+          try { JSON.parse(localStorage.getItem(key) || '[]').forEach(v => todasLasVentas.push({ ...v, _mesKey: key })); } catch {}
+        });
+
+        // Proveedores únicos extraídos de servicios en ventas
+        const provsDeVentas = {};
+        todasLasVentas.forEach(v => {
+          (v.servicios || []).forEach(s => {
+            if (s.proveedor) {
+              if (!provsDeVentas[s.proveedor]) provsDeVentas[s.proveedor] = { nombre: s.proveedor, servicios: [], ventas: new Set() };
+              provsDeVentas[s.proveedor].servicios.push({ ...s, ventaId: v.ventaId, cliente: v.cliente });
+              provsDeVentas[s.proveedor].ventas.add(v.ventaId);
+            }
+          });
+        });
+
+        // Pasajeros desde localStorage
+        let todosPax = [];
+        try { todosPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]'); } catch {}
+        if (todosPax.length === 0) todosPax = passengers;
+
+        const q = busqueda.toLowerCase().trim();
+        const LIMIT_DEFAULT = 3;  // sin búsqueda: últimas 3
+        const LIMIT_BUSQ   = 30;  // con búsqueda: hasta 30
+
+        // Ventas: filtrar y limitar
+        const ventasFiltradas = !q
+          ? [...todasLasVentas].reverse().slice(0, LIMIT_DEFAULT)
+          : todasLasVentas.filter(v =>
+              (v.cliente||'').toLowerCase().includes(q) ||
+              (v.ventaId||'').toLowerCase().includes(q) ||
+              (v.destino||'').toLowerCase().includes(q) ||
+              (v.estado||'').toLowerCase().includes(q) ||
+              (v.servicios||[]).some(s => (s.descripcion||'').toLowerCase().includes(q) || (s.tipo||'').toLowerCase().includes(q))
+            ).slice(0, LIMIT_BUSQ);
+
+        const proveedoresList = Object.values(provsDeVentas);
+        const proveedoresFiltrados = !q
+          ? proveedoresList.slice(0, 20)
+          : proveedoresList.filter(p =>
+              (p.nombre||'').toLowerCase().includes(q) ||
+              p.servicios.some(s => (s.descripcion||'').toLowerCase().includes(q) || (s.tipo||'').toLowerCase().includes(q))
+            ).slice(0, LIMIT_BUSQ);
+
+        // Cotizaciones: filtrar y limitar
+        const cotsFiltradas = !q
+          ? [...quotes].reverse().slice(0, LIMIT_DEFAULT)
+          : quotes.filter(cot =>
+              (cot.client||cot.cliente||'').toLowerCase().includes(q) ||
+              (cot.destination||cot.destino||'').toLowerCase().includes(q) ||
+              (cot.status||cot.estado||'').toLowerCase().includes(q) ||
+              String(cot.id||'').toLowerCase().includes(q)
+            ).slice(0, LIMIT_BUSQ);
+
+        const paxFiltrados = !q
+          ? todosPax.slice(0, 20)
+          : todosPax.filter(p =>
+              (p.name||p.nombre||'').toLowerCase().includes(q) ||
+              (p.email||'').toLowerCase().includes(q) ||
+              (p.phone||p.telefono||'').toLowerCase().includes(q) ||
+              (p.dni||'').toLowerCase().includes(q) ||
+              String(p.id||'').toLowerCase().includes(q)
+            ).slice(0, LIMIT_BUSQ);
+
+        const conteos = {
+          VENTAS: ventasFiltradas.length,
+          PROVEEDORES: proveedoresFiltrados.length,
+          COTIZACIONES: cotsFiltradas.length,
+          PASAJEROS: paxFiltrados.length,
+        };
+
+        const fmtMonto = n => n ? `$${Number(n).toLocaleString()}` : '—';
+        const statusColor = st => {
+          const s = (st||'').toLowerCase();
+          if (s.includes('confirm') || s.includes('pagad') || s.includes('activ')) return '#4ade80';
+          if (s.includes('cancel') || s.includes('vencid')) return '#f87171';
+          if (s.includes('pend') || s.includes('espera')) return '#fbbf24';
+          return '#7080b0';
+        };
+        const rowHover = { cursor: 'pointer' };
+
+        return (
+          <div style={{ border: '1.5px solid #1e2e6a', borderRadius: 12, overflow: 'hidden', marginBottom: 8 }}>
+            {/* Header */}
+            <div style={{ background: 'rgba(30,46,106,0.5)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 18 }}>🔍</span>
+              <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 15, whiteSpace: 'nowrap' }}>Buscador global</span>
+              <input
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, destino, ID, servicio..."
+                style={{ flex: 1, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '7px 14px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, outline: 'none' }}
+              />
+              {busqueda && (
+                <button onClick={() => setBusqueda('')} style={{ background: 'none', border: 'none', color: '#7080b0', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', background: 'rgba(15,21,53,0.8)', borderBottom: '1px solid #1e2e6a' }}>
+              {CATS.map(cat => (
+                <button key={cat.id} onClick={() => setCategoriaActiva(cat.id)}
+                  style={{ flex: 1, padding: '9px 4px', border: 'none', cursor: 'pointer', fontFamily: 'system-ui', fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
+                    background: categoriaActiva === cat.id ? 'rgba(96,165,250,0.15)' : 'transparent',
+                    color: categoriaActiva === cat.id ? '#60a5fa' : '#5060a0',
+                    borderBottom: categoriaActiva === cat.id ? '2px solid #60a5fa' : '2px solid transparent',
+                  }}>
+                  {cat.icon} {cat.label}
+                  <span style={{ marginLeft: 5, background: categoriaActiva === cat.id ? '#60a5fa' : '#1e2e6a', color: categoriaActiva === cat.id ? '#fff' : '#5060a0', borderRadius: 10, padding: '1px 6px', fontSize: 10 }}>{conteos[cat.id]}</span>
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={S.card}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#e8334a", marginBottom: 16 }}>Pagos Recientes</h3>
-          <table style={S.table}>
-            <thead><tr>{["Cliente", "Monto", "Método", "Estado"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {initialPayments.map(p => (
-                <tr key={p.id}>
-                  <td style={S.td}>{p.client}</td>
-                  <td style={{ ...S.td, color: "#e8334a", fontWeight: 700 }}>${p.amount.toLocaleString()}</td>
-                  <td style={S.td}>{p.method}</td>
-                  <td style={S.td}><span style={S.badge(p.status === "Pagado" ? "green" : "yellow")}>{p.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+
+            {/* Resultados */}
+            <div style={{ maxHeight: 340, overflowY: 'auto', background: '#080f28' }}>
+
+              {/* VENTAS — clickeable → navega al mes correspondiente */}
+              {categoriaActiva === 'VENTAS' && (
+                ventasFiltradas.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : <>
+                  {ventasFiltradas.map((v, i) => {
+                    const totalCobrado = (v.cobros||[]).reduce((a,c) => a+(c.monto||c.amount||0), 0);
+                    const totalVenta = v.monto || 0;
+                    const saldo = totalVenta - totalCobrado;
+                    return (
+                      <div key={v.ventaId || i}
+                        onClick={() => setView && setView(v._mesKey)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 110 }}>{v.ventaId || '—'}</span>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.cliente || '—'}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0', minWidth: 80, textAlign: 'center' }}>{v.destino || '—'}</span>
+                        <span style={{ fontSize: 11, color: '#fbbf24', minWidth: 70, textAlign: 'right', fontWeight: 600 }}>{fmtMonto(totalVenta)}</span>
+                        <span style={{ fontSize: 11, color: saldo > 0 ? '#f87171' : '#4ade80', minWidth: 80, textAlign: 'right', fontWeight: 600 }}>Saldo {fmtMonto(saldo)}</span>
+                        <span style={{ fontSize: 10, color: statusColor(v.estado), background: 'rgba(30,46,106,0.5)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{v.estado || '—'}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                    );
+                  })}
+                  {!busqueda && (
+                    <div style={{ padding: '8px 20px', fontSize: 11, color: '#3a4a80', fontFamily: 'system-ui', textAlign: 'center', borderTop: '1px solid #1e2e6a' }}>
+                      Últimas {LIMIT_DEFAULT} ventas · Buscá para ver más
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* PROVEEDORES — clickeable → navega a módulo Proveedores */}
+              {categoriaActiva === 'PROVEEDORES' && (
+                proveedoresFiltrados.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin proveedores registrados en ventas</div>
+                ) : proveedoresFiltrados.map((p, i) => {
+                  const total = p.servicios.reduce((a,s) => a+(s.precio||0), 0);
+                  const neto = p.servicios.reduce((a,s) => a+(s.neto||0), 0);
+                  return (
+                    <div key={p.nombre+i}
+                      onClick={() => setView && setView('providers')}
+                      style={{ padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1 }}>🏢 {p.nombre}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0' }}>{p.ventas.size} {p.ventas.size === 1 ? 'venta' : 'ventas'}</span>
+                        <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Total {fmtMonto(total)}</span>
+                        <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600 }}>Neto {fmtMonto(neto)}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {p.servicios.slice(0,5).map((s,j) => (
+                          <span key={j} style={{ fontSize: 10, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', borderRadius: 4, padding: '2px 7px' }}>{s.tipo} · {s._ventaId || s.ventaId}</span>
+                        ))}
+                        {p.servicios.length > 5 && <span style={{ fontSize: 10, color: '#3a4a80' }}>+{p.servicios.length-5} más</span>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* COTIZACIONES */}
+              {categoriaActiva === 'COTIZACIONES' && (
+                cotsFiltradas.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : <>
+                  {cotsFiltradas.map((cot, i) => {
+                    const cliente = cot.client || cot.cliente || '—';
+                    const destino = cot.destination || cot.destino || '—';
+                    const estado = cot.status || cot.estado || '—';
+                    const total = cot.total || cot.monto || 0;
+                    return (
+                      <div key={cot.id || i}
+                        onClick={() => setView && setView('quotes')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 40 }}>#{cot.id}</span>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cliente}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0', minWidth: 90, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{destino}</span>
+                        {total > 0 && <span style={{ fontSize: 11, color: '#fbbf24', minWidth: 70, textAlign: 'right', fontWeight: 600 }}>{fmtMonto(total)}</span>}
+                        <span style={{ fontSize: 10, color: statusColor(estado), background: 'rgba(30,46,106,0.5)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{estado}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                    );
+                  })}
+                  {!busqueda && (
+                    <div style={{ padding: '8px 20px', fontSize: 11, color: '#3a4a80', fontFamily: 'system-ui', textAlign: 'center', borderTop: '1px solid #1e2e6a' }}>
+                      Últimas {LIMIT_DEFAULT} cotizaciones · Buscá para ver más
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* PASAJEROS */}
+              {categoriaActiva === 'PASAJEROS' && (
+                paxFiltrados.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : paxFiltrados.map((p, i) => {
+                  const nombre = p.name || p.nombre || '—';
+                  const doc = p.dni || p.pasaporte || '—';
+                  const vencDoc = p.docExpiracion || p.expiracion;
+                  const hoyStr = new Date().toISOString().split('T')[0];
+                  const docVigente = vencDoc ? vencDoc >= hoyStr : null;
+                  return (
+                    <div key={p.id || i}
+                      onClick={() => setView && setView('passengers')}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 30 }}>#{p.id}</span>
+                      <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
+                      <span style={{ fontSize: 11, color: '#7080b0', minWidth: 80 }}>{p.email || '—'}</span>
+                      <span style={{ fontSize: 11, color: '#7080b0', minWidth: 60 }}>{p.phone || p.telefono || '—'}</span>
+                      <span style={{ fontSize: 11, color: '#5060a0', minWidth: 80 }}>{p.tipoDoc || 'DNI'}: {doc}</span>
+                      {vencDoc && (
+                        <span style={{ fontSize: 10, color: docVigente ? '#4ade80' : '#f87171', background: docVigente ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                          {docVigente ? '✓' : '⚠️'} Doc {vencDoc.split('-').reverse().join('/')}
+                        </span>
+                      )}
+                      {p.alertaCumple && <span style={{ fontSize: 12 }}>🔔</span>}
+                      <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                    </div>
+                  );
+                })
+              )}
+
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -38757,7 +39617,7 @@ function ProvidersModule() {
             </div>
 
             <div style={{ display: "flex", borderBottom: "1px solid #1e2e6a", marginBottom: 0 }}>
-              {[["info","📋 Info"],["pagos","💳 Formas de Pago"],["accesos","🔐 Accesos"],["subperfiles","🏢 Unidades de Negocio"]].map(([id,label]) => (
+              {[["info","📋 Info"],["pagos","💳 Formas de Pago"],["accesos","🔐 Accesos"],["subperfiles","🏢 Unidades de Negocio"],["reporte","📊 Reporte"]].map(([id,label]) => (
                 <div key={id} style={tabStyle(detailTab === id)} onClick={() => setDetailTab(id)}>{label}</div>
               ))}
             </div>
@@ -38773,6 +39633,206 @@ function ProvidersModule() {
               )}
               {detailTab === "pagos" && renderPaymentsTab(detailProvider, false)}
               {detailTab === "accesos" && renderAccessTab(detailProvider, false)}
+              {detailTab === "reporte" && (() => {
+                const MESES_R = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+                const prov = detailProvider;
+                const nombresRelacionados = [prov.name, ...(prov.subprofiles||[]).map(s => s.name)].filter(Boolean);
+
+                // Netos: servicios de ventas cuyo proveedor coincide
+                const netosPorUnidad = {}; // { unidad: { servicios: [{ventaId, mes, descripcion, tipo, neto}] } }
+                MESES_R.forEach(mes => {
+                  try {
+                    const vs = JSON.parse(localStorage.getItem(`ventas_2026_${mes}`) || '[]');
+                    vs.forEach(v => {
+                      (v.servicios||[]).forEach(s => {
+                        if (!nombresRelacionados.some(n => (s.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                        const unidad = s.proveedor || prov.name;
+                        if (!netosPorUnidad[unidad]) netosPorUnidad[unidad] = { items: [] };
+                        netosPorUnidad[unidad].items.push({ ventaId: v.ventaId, mes, cliente: v.cliente, tipo: s.tipo, descripcion: s.descripcion||'', neto: s.neto||0 });
+                      });
+                    });
+                  } catch {}
+                });
+
+                const totalNeto = Object.values(netosPorUnidad).reduce((a, u) => a + u.items.reduce((b, i) => b + i.neto, 0), 0);
+
+                // Pagos: de ventas.pagos + atd_payments globales
+                const pagosAlProv = [];
+                const idsVistos = new Set();
+                MESES_R.forEach(mes => {
+                  try {
+                    const vs = JSON.parse(localStorage.getItem(`ventas_2026_${mes}`) || '[]');
+                    vs.forEach(v => {
+                      (v.pagos||[]).forEach(p => {
+                        if (!nombresRelacionados.some(n => (p.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                        if (!idsVistos.has(p.id)) { idsVistos.add(p.id); pagosAlProv.push({ ...p, _ventaId: v.ventaId }); }
+                      });
+                    });
+                  } catch {}
+                });
+                try {
+                  JSON.parse(localStorage.getItem('atd_payments') || '[]').forEach(p => {
+                    if (!nombresRelacionados.some(n => (p.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                    if (!idsVistos.has(p.id)) { idsVistos.add(p.id); pagosAlProv.push(p); }
+                  });
+                } catch {}
+
+                const totalPagado = pagosAlProv.reduce((a, p) => a + (p.monto||p.amount||0), 0);
+                const saldo = totalNeto - totalPagado;
+                const fmtM = n => `$${Number(n||0).toLocaleString()}`;
+                const fmtF = f => f ? String(f).split('-').reverse().join('/') : '—';
+
+                // Excel export
+                const exportExcel = () => {
+                  const esc = v => String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                  const hdr = v => `<Cell ss:StyleID="h"><Data ss:Type="String">${esc(v)}</Data></Cell>`;
+                  const str = v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`;
+                  const num = v => `<Cell ss:StyleID="n"><Data ss:Type="Number">${Number(v)||0}</Data></Cell>`;
+                  const R = cells => '<Row>' + cells.join('') + '</Row>';
+
+                  // Hoja 1: Netos por servicio
+                  const allItems = Object.entries(netosPorUnidad).flatMap(([u, d]) => d.items.map(i => ({...i, _unidad: u})));
+                  const hdrN = R([hdr('Unidad / Proveedor'),hdr('ID Venta'),hdr('Mes'),hdr('Cliente'),hdr('Tipo'),hdr('Descripción'),hdr('Neto USD')]);
+                  const rowsN = allItems.map(i => R([str(i._unidad),str(i.ventaId),str(i.mes),str(i.cliente),str(i.tipo),str(i.descripcion),num(i.neto)])).join('');
+                  const totN = R([hdr('TOTAL NETO'),str(''),str(''),str(''),str(''),str(''),num(totalNeto)]);
+
+                  // Hoja 2: Pagos
+                  const hdrP = R([hdr('Fecha'),hdr('ID Venta'),hdr('Unidad / Proveedor'),hdr('Concepto'),hdr('Monto'),hdr('Moneda'),hdr('Método'),hdr('Estado')]);
+                  const rowsP = pagosAlProv.map(p => R([str(fmtF(p.fecha||p.date)),str(p._ventaId||p.ventaId||''),str(p.proveedor),str(p.concepto||p.description||''),num(p.monto||p.amount),str(p.moneda||'USD'),str(p.metodo||p.method||''),str(p.estado||p.status||'')])).join('');
+                  const totP = R([hdr('TOTAL PAGADO'),str(''),str(''),str(''),num(totalPagado),str(''),str(''),str('')]);
+                  const saldoR = R([hdr('SALDO PENDIENTE'),str(''),str(''),str(''),num(saldo),str(''),str(''),str('')]);
+
+                  // Hoja 3: Resumen por unidad
+                  const hdrU = R([hdr('Unidad de Negocio'),hdr('Servicios'),hdr('Total Neto USD')]);
+                  const rowsU = Object.entries(netosPorUnidad).map(([u,d]) => R([str(u),num(d.items.length),num(d.items.reduce((a,i)=>a+i.neto,0))])).join('');
+
+                  const xml = [
+                    '<?xml version="1.0" encoding="UTF-8"?>',
+                    '<?mso-application progid="Excel.Sheet"?>',
+                    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+                    '<Styles><Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#162040" ss:Pattern="Solid"/></Style>',
+                    '<Style ss:ID="n"><NumberFormat ss:Format="#,##0"/></Style></Styles>',
+                    `<Worksheet ss:Name="Netos"><Table>`, hdrN, rowsN, totN, '</Table></Worksheet>',
+                    `<Worksheet ss:Name="Pagos"><Table>`, hdrP, rowsP, totP, saldoR, '</Table></Worksheet>',
+                    `<Worksheet ss:Name="Por Unidad"><Table>`, hdrU, rowsU, '</Table></Worksheet>',
+                    '</Workbook>'
+                  ].join('');
+                  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url;
+                  a.download = `reporte_${prov.name.replace(/\s+/g,'_').toLowerCase()}_2026.xls`;
+                  a.click(); URL.revokeObjectURL(url);
+                };
+
+                return (
+                  <div>
+                    {/* Acción Excel */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                      <button onClick={exportExcel} style={{ ...S.btn('primary'), fontSize: 12 }}>📊 Exportar Excel</button>
+                    </div>
+
+                    {/* 3 KPIs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(167,139,250,0.25)' }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>TOTAL NETO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#a78bfa' }}>{fmtM(totalNeto)}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>Costo total de servicios</div>
+                      </div>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(74,222,128,0.25)' }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>TOTAL PAGADO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#4ade80' }}>{fmtM(totalPagado)}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>{pagosAlProv.length} pago{pagosAlProv.length !== 1 ? 's' : ''} registrado{pagosAlProv.length !== 1 ? 's' : ''}</div>
+                      </div>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: `1px solid ${saldo > 0 ? 'rgba(248,113,113,0.3)' : 'rgba(74,222,128,0.2)'}` }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>{saldo > 0 ? 'SALDO A PAGAR' : 'SALDO'}</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: saldo > 0 ? '#f87171' : '#4ade80' }}>{fmtM(Math.abs(saldo))}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>{saldo > 0 ? '⚠️ Pendiente de pago' : '✅ Al día'}</div>
+                      </div>
+                    </div>
+
+                    {/* Netos por unidad de negocio */}
+                    {Object.entries(netosPorUnidad).map(([unidad, d]) => {
+                      const netoUnidad = d.items.reduce((a, i) => a + i.neto, 0);
+                      return (
+                        <div key={unidad} style={{ marginBottom: 16 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 700, fontFamily: 'system-ui', letterSpacing: '0.06em' }}>🏷️ NETOS — {unidad}</span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginLeft: 'auto' }}>{fmtM(netoUnidad)}</span>
+                          </div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'system-ui' }}>
+                            <thead>
+                              <tr style={{ background: '#111d3c' }}>
+                                {['ID Venta','Mes','Cliente','Tipo','Descripción','Neto USD'].map(h => (
+                                  <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: '#7080b0', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #1e2e6a' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {d.items.map((item, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i%2===0?'transparent':'rgba(30,46,106,0.05)' }}>
+                                  <td style={{ padding: '6px 10px', color: '#3a4a80', fontFamily: 'monospace', fontSize: 11 }}>{item.ventaId}</td>
+                                  <td style={{ padding: '6px 10px', color: '#7080b0' }}>{item.mes.charAt(0).toUpperCase()+item.mes.slice(1)}</td>
+                                  <td style={{ padding: '6px 10px', color: '#c8d4f0', fontWeight: 600 }}>{item.cliente}</td>
+                                  <td style={{ padding: '6px 10px' }}><span style={{ fontSize: 10, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', borderRadius: 4, padding: '1px 7px' }}>{item.tipo}</span></td>
+                                  <td style={{ padding: '6px 10px', color: '#7080b0' }}>{item.descripcion||'—'}</td>
+                                  <td style={{ padding: '6px 10px', color: '#a78bfa', fontWeight: 700 }}>{fmtM(item.neto)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                    {Object.keys(netosPorUnidad).length === 0 && (
+                      <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 16 }}>Sin servicios con neto registrado para este proveedor</div>
+                    )}
+
+                    {/* Pagos */}
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 700, fontFamily: 'system-ui', letterSpacing: '0.06em' }}>💳 PAGOS REGISTRADOS</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#4ade80', marginLeft: 'auto' }}>{fmtM(totalPagado)}</span>
+                      </div>
+                      {pagosAlProv.length === 0
+                        ? <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 12 }}>Sin pagos registrados</div>
+                        : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'system-ui' }}>
+                          <thead>
+                            <tr style={{ background: '#111d3c' }}>
+                              {['Fecha','ID Venta','Unidad','Concepto','Monto','Moneda','Método','Estado'].map(h => (
+                                <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: '#7080b0', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #1e2e6a' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagosAlProv.map((p, i) => (
+                              <tr key={p.id||i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i%2===0?'transparent':'rgba(30,46,106,0.05)' }}>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{fmtF(p.fecha||p.date)}</td>
+                                <td style={{ padding: '6px 10px', color: '#3a4a80', fontFamily: 'monospace', fontSize: 11 }}>{p._ventaId||p.ventaId||'—'}</td>
+                                <td style={{ padding: '6px 10px', color: '#c8d4f0', fontWeight: 600 }}>{p.proveedor}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.concepto||p.description||'—'}</td>
+                                <td style={{ padding: '6px 10px', color: '#4ade80', fontWeight: 700 }}>{fmtM(p.monto||p.amount)}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.moneda||'USD'}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.metodo||p.method||'—'}</td>
+                                <td style={{ padding: '6px 10px' }}><span style={{ fontSize: 10, background: 'rgba(30,46,106,0.5)', color: '#7080b0', borderRadius: 4, padding: '2px 7px' }}>{p.estado||p.status||'—'}</span></td>
+                              </tr>
+                            ))}
+                            <tr style={{ background: '#111d3c', borderTop: '2px solid #1e2e6a' }}>
+                              <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, color: '#4ade80', fontSize: 12 }}>TOTAL PAGADO</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 800, color: '#4ade80', fontSize: 13 }}>{fmtM(totalPagado)}</td>
+                              <td colSpan={3}/>
+                            </tr>
+                            <tr style={{ background: saldo > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(74,222,128,0.06)', borderTop: '1px solid #1e2e6a' }}>
+                              <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, color: saldo > 0 ? '#f87171' : '#4ade80', fontSize: 12 }}>{saldo > 0 ? '⚠️ SALDO PENDIENTE' : '✅ SALDO'}</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 800, color: saldo > 0 ? '#f87171' : '#4ade80', fontSize: 14 }}>{fmtM(Math.abs(saldo))}</td>
+                              <td colSpan={3}/>
+                            </tr>
+                          </tbody>
+                        </table>
+                      }
+                    </div>
+                  </div>
+                );
+              })()}
               {detailTab === "subperfiles" && (
                 <div>
                   {(detailProvider.subprofiles || []).length === 0
@@ -38905,7 +39965,12 @@ function PassengersModule({ passengers, setPassengers }) {
   });
 
   const handleAdd = () => {
-    const newP = { ...form, id: Date.now(), trips: Number(form.trips), totalSpent: Number(form.totalSpent) };
+    // ID correlativo: máximo ID numérico real (< 10.000.000) + 1
+    const maxId = passengers.reduce((max, p) => {
+      const n = typeof p.id === 'number' && p.id < 10000000 ? p.id : 0;
+      return n > max ? n : max;
+    }, 0);
+    const newP = { ...form, id: maxId + 1, trips: Number(form.trips), totalSpent: Number(form.totalSpent) };
     const updated = [...passengers, newP];
     setPassengers(updated);
     setShowModal(false);
@@ -38983,7 +40048,20 @@ function PassengersModule({ passengers, setPassengers }) {
                 <td style={S.td}>{p.birthdate || "—"}</td>
                 <td style={S.td}>{p.nationality || "—"}</td>
                 <td style={S.td}>{p.visaUSA ? <span style={S.badge("green")}>🇺🇸 Sí</span> : <span style={{ color: "#3a4a80", fontSize: 11, fontFamily: "system-ui" }}>No</span>}</td>
-                <td style={S.td}><button style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }} onClick={() => openProfile(p)}>Ver</button></td>
+                <td style={S.td}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button
+                      title={p.alertaCumple ? "Quitar alerta de cumpleaños" : "Activar alerta de cumpleaños"}
+                      style={{ background: "none", border: `1px solid ${p.alertaCumple ? '#f472b6' : '#1e2e6a'}`, borderRadius: 6, padding: "3px 7px", cursor: "pointer", fontSize: 14, color: p.alertaCumple ? '#f472b6' : '#3a4a80', transition: "all .15s" }}
+                      onClick={() => {
+                        const updated = passengers.map(x => x.id === p.id ? { ...x, alertaCumple: !x.alertaCumple } : x);
+                        setPassengers(updated);
+                        try { localStorage.setItem('atd_passengers', JSON.stringify(updated)); SB.saveBlob('ventas','atd_passengers',updated); } catch {}
+                      }}
+                    >{p.alertaCumple ? '🔔' : '🔕'}</button>
+                    <button style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }} onClick={() => openProfile(p)}>Ver</button>
+                  </div>
+                </td>
               </tr>
             ))}
             {filteredPassengers.length > 100 && (
@@ -39359,26 +40437,89 @@ function DestinationSearch({ value, onChange, placeholder }) {
   const [suggestions, setSuggestions] = useState([]);
   const [show, setShow] = useState(false);
 
+  // Normaliza texto quitando tildes para búsqueda flexible
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  const buscar = (val) => {
+    if (val.length < 2) { setSuggestions([]); setShow(false); return; }
+    const q = norm(val);
+    const resultados = [];
+    const vistos = new Set();
+
+    // 1. Buscar en DESTINATIONS_DB (ALL_CITIES) sin tildes
+    ALL_CITIES.forEach(d => {
+      if (norm(d.city).includes(q) || norm(d.country).includes(q)) {
+        const key = d.city + '|' + d.country;
+        if (!vistos.has(key)) { vistos.add(key); resultados.push({ city: d.city, country: d.country, continent: d.continent, tipo: 'db' }); }
+      }
+    });
+
+    // 2. Buscar en IATA_MAP — muestra la ciudad sin código IATA
+    Object.entries(IATA_MAP).forEach(([code, nombre]) => {
+      if (norm(code).includes(q) || norm(nombre).includes(q)) {
+        // Extraer nombre limpio (sin paréntesis del código de aeropuerto)
+        const cityName = nombre.replace(/\s*\(.*?\)/g, '').trim();
+        const key = cityName + '|IATA';
+        if (!vistos.has(key)) {
+          vistos.add(key);
+          resultados.push({ city: cityName, country: code, continent: 'IATA', tipo: 'iata', iataCode: code, iataNombre: nombre });
+        }
+      }
+    });
+
+    // 3. Buscar en destinos personalizados guardados
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_destinations') || '[]');
+      custom.forEach(d => {
+        if (norm(d.city).includes(q) || norm(d.country || '').includes(q)) {
+          const key = d.city + '|custom';
+          if (!vistos.has(key)) { vistos.add(key); resultados.push({ ...d, tipo: 'custom' }); }
+        }
+      });
+    } catch {}
+
+    setSuggestions(resultados.slice(0, 12));
+    setShow(true);
+  };
+
   const handleChange = (val) => {
     setQuery(val);
     onChange(val);
-    if (val.length < 2) { setSuggestions([]); setShow(false); return; }
-    const q = val.toLowerCase();
-    const filtered = ALL_CITIES.filter(d =>
-      d.city.toLowerCase().includes(q) ||
-      d.country.toLowerCase().includes(q)
-    ).slice(0, 10);
-    setSuggestions(filtered);
-    setShow(filtered.length > 0);
+    buscar(val);
   };
 
   const handleSelect = (d) => {
-    const full = d.city + ", " + d.country;
+    let full;
+    if (d.tipo === 'iata') {
+      full = d.city; // Solo el nombre, sin código IATA
+    } else if (d.tipo === 'custom') {
+      full = d.city + (d.country ? ', ' + d.country : '');
+    } else {
+      full = d.city + ', ' + d.country;
+    }
     setQuery(full);
     onChange(full);
     setSuggestions([]);
     setShow(false);
   };
+
+  const agregarDestino = () => {
+    const nombre = query.trim();
+    if (!nombre) return;
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_destinations') || '[]');
+      if (!custom.find(d => norm(d.city) === norm(nombre))) {
+        custom.push({ city: nombre, country: '', continent: 'Personalizado' });
+        localStorage.setItem('atd_custom_destinations', JSON.stringify(custom));
+      }
+    } catch {}
+    onChange(nombre);
+    setSuggestions([]);
+    setShow(false);
+  };
+
+  const hayResultados = suggestions.length > 0;
+  const mostrarAgregar = query.trim().length >= 2;
 
   return (
     <div style={{ position: "relative" }}>
@@ -39387,11 +40528,11 @@ function DestinationSearch({ value, onChange, placeholder }) {
         value={query}
         placeholder={placeholder || "Escribí ciudad o país..."}
         onChange={e => handleChange(e.target.value)}
-        onBlur={() => setTimeout(() => setShow(false), 150)}
-        onFocus={() => query.length >= 2 && suggestions.length > 0 && setShow(true)}
+        onBlur={() => setTimeout(() => setShow(false), 200)}
+        onFocus={() => query.length >= 2 && setShow(true)}
       />
-      {show && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 8, zIndex: 999, maxHeight: 280, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+      {show && (hayResultados || mostrarAgregar) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 8, zIndex: 999, maxHeight: 300, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           {suggestions.map((d, i) => (
             <div key={i} onMouseDown={() => handleSelect(d)}
               style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}
@@ -39399,11 +40540,24 @@ function DestinationSearch({ value, onChange, placeholder }) {
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", fontFamily: "system-ui" }}>{d.city}</div>
-                <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{d.country} · {d.continent}</div>
+                <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>
+                  {d.tipo === 'iata' ? `✈ ${d.iataNombre} · ${d.iataCode}` : d.tipo === 'custom' ? `★ Personalizado` : `${d.country} · ${d.continent}`}
+                </div>
               </div>
-              <span style={{ fontSize: 10, color: "#3a4a80", fontFamily: "system-ui" }}>{d.continent}</span>
+              <span style={{ fontSize: 10, background: d.tipo === 'iata' ? '#1e3a5f' : d.tipo === 'custom' ? '#3a2a00' : '#1a2550', color: d.tipo === 'iata' ? '#60a5fa' : d.tipo === 'custom' ? '#fbbf24' : '#3a4a80', borderRadius: 4, padding: '2px 6px', fontFamily: "system-ui" }}>
+                {d.tipo === 'iata' ? 'IATA' : d.tipo === 'custom' ? '★' : d.continent}
+              </span>
             </div>
           ))}
+          {mostrarAgregar && (
+            <div onMouseDown={agregarDestino}
+              style={{ padding: "10px 14px", cursor: "pointer", borderTop: hayResultados ? "1px solid #2a3a6a" : "none", display: "flex", alignItems: "center", gap: 8, color: "#4ade80" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#0a1a0a"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>✚</span>
+              <span style={{ fontSize: 13, fontFamily: "system-ui" }}>Agregar <strong>"{query.trim()}"</strong> como destino</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -39415,32 +40569,41 @@ function ClientSearch({ value, onChange, onSelect }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSugg, setShowSugg] = useState(false);
 
+  // Busca siempre en localStorage (datos vivos), con fallback a initialPassengers
+  const getAllPax = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      return stored.length > 0 ? stored : initialPassengers;
+    } catch { return initialPassengers; }
+  };
+
   const handleChange = (val) => {
     setQuery(val);
     onChange(val);
     if (val.length < 2) { setSuggestions([]); setShowSugg(false); return; }
     const isNum = /^\d+$/.test(val.trim());
-    const results = initialPassengers.filter(p =>
-      isNum
+    const allPax = getAllPax();
+    const results = allPax.filter(p => {
+      const nombre = p.name || p.nombre || '';
+      return isNum
         ? String(p.id).startsWith(val.trim())
-        : p.name.toLowerCase().includes(val.toLowerCase())
-    ).slice(0, 8);
+        : nombre.toLowerCase().includes(val.toLowerCase());
+    }).slice(0, 8);
     setSuggestions(results);
     setShowSugg(results.length > 0);
   };
 
   const handleSelect = (p) => {
-    // Try to get full passenger data from localStorage
+    // Buscar el objeto completo en localStorage por id
     try {
       const stored = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
-      const full = stored.find(x => x.id === p.id);
-      const finalP = full || p;
-      setQuery(finalP.name);
+      const full = stored.find(x => x.id === p.id) || p;
+      setQuery(full.name || full.nombre || '');
       setSuggestions([]);
       setShowSugg(false);
-      onSelect(finalP);
+      onSelect(full);
     } catch {
-      setQuery(p.name);
+      setQuery(p.name || p.nombre || '');
       setSuggestions([]);
       setShowSugg(false);
       onSelect(p);
@@ -39501,8 +40664,18 @@ function QuotesModule({ quotes, setQuotes, passengers, setPassengers }) {
     const key = `ventas_2026_${mes}`;
     try {
       const prev = JSON.parse(localStorage.getItem(key) || '[]');
-      const ventaNum = String(prev.length + 1).padStart(3, '0');
-      const ventaId = `VTA-2026-${ventaNum}`;
+      const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      const maxNum = meses.reduce((max, m) => {
+        try {
+          const arr = JSON.parse(localStorage.getItem(`ventas_2026_${m}`) || '[]');
+          arr.forEach(v => {
+            const n = parseInt((v.ventaId || '').split('-')[2] || '0');
+            if (n > max) max = n;
+          });
+        } catch {}
+        return max;
+      }, 0);
+      const ventaId = `VTA-2026-${String(maxNum + 1).padStart(3, '0')}`;
       const venta = {
         id: Date.now(),
         ventaId,
@@ -39579,6 +40752,7 @@ function QuotesModule({ quotes, setQuotes, passengers, setPassengers }) {
                       {["Pendiente", "En revisión", "Confirmada", "Cancelada"].map(s => <option key={s}>{s}</option>)}
                     </select>
                     <button style={{ ...S.btn('ghost'), padding: '4px 10px', fontSize: 11, whiteSpace: 'nowrap' }} onClick={() => setDetailQuote(q)}>Ver</button>
+                    <button style={{ ...S.btn('danger'), padding: '4px 8px', fontSize: 11 }} onClick={() => { if (window.confirm(`¿Eliminar cotización de ${q.client}?`)) { const upd = quotes.filter(x => x.id !== q.id); setQuotes(upd); try { localStorage.setItem('atd_quotes', JSON.stringify(upd)); SB.saveBlob('ventas','atd_quotes',upd); } catch {} } }}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -39807,12 +40981,8 @@ function QuoteDetailModal({ quote, onClose, onUpdate, onConvertToSale }) {
 
   const [aiError, setAiError] = useState("");
 
-  // Auto-generate when opening destino tab if field is empty
-  useEffect(() => {
-    if (tab === "destino" && !destDetalle && quote.destination) {
-      generateDestino();
-    }
-  }, [tab]);
+  // AI generation disabled (no API key configured)
+  useEffect(() => {}, [tab]);
 
   const TIPOS_SVC = ["Vuelo", "Hotel", "Traslado", "Actividad", "Auto", "Tren", "Seguro", "Circuito", "Otro"];
 
@@ -40033,18 +41203,8 @@ function QuoteDetailModal({ quote, onClose, onUpdate, onConvertToSale }) {
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <label style={S.label}>Detalle del destino / itinerario</label>
-                  <button
-                    onClick={generateDestino}
-                    disabled={loadingAI}
-                    style={{ ...S.btn("primary"), padding: "6px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6, opacity: loadingAI ? 0.7 : 1, cursor: loadingAI ? "wait" : "pointer" }}>
-                    {loadingAI ? (
-                      <><span style={{ display: "inline-block", animation: "spin 1s linear infinite", fontSize: 14 }}>⟳</span> Generando...</>
-                    ) : (
-                      <><span>✨</span> Generar con IA</>
-                    )}
-                  </button>
                 </div>
-                <textarea style={{ ...S.input, height: 160, resize: "vertical" }} value={destDetalle} onChange={e => handleDestDetalleChange(e.target.value)} placeholder="Escribí manualmente o usá el botón ✨ Generar con IA..." />
+                <textarea style={{ ...S.input, height: 160, resize: "vertical" }} value={destDetalle} onChange={e => handleDestDetalleChange(e.target.value)} placeholder="Escribí el detalle del destino / itinerario..." />
               </div>
               <div style={{ marginTop: 6, fontSize: 11, color: "#3a4a80", fontFamily: "system-ui" }}>✓ Guardado automáticamente · Podés editar el texto generado</div>
               {aiError && <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(232,51,74,0.1)", border: "1px solid #e8334a", borderRadius: 8, fontSize: 12, color: "#f87171", fontFamily: "system-ui" }}>⚠️ {aiError}</div>}
@@ -41202,28 +42362,87 @@ function PaymentsModule({ payments, setPayments }) {
 function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments, setGlobalPayments }) {
   const [tab, setTab] = useState("general");
 
-  // Merge global payments into venta on open
+  // La venta es la fuente de verdad — no mergeamos desde atd_payments para evitar re-inyectar cobros eliminados
   const safePay = (p) => ({ ...p, monto: Number(p.monto || p.amount || 0), amount: Number(p.amount || p.monto || 0) });
 
-  const mergeGlobalPayments = (v) => {
-    if (!v.ventaId) return v;
+  // Enriquece pasajeros de la venta con datos completos de atd_passengers (por nombre o paxId)
+  const enrichPasajeros = (pasajeros) => {
     try {
-      const storedPays = JSON.parse(localStorage.getItem('atd_payments') || '[]');
-      const globalPays = (globalPayments && globalPayments.length > 0 ? globalPayments : storedPays).map(safePay);
-      const matching = globalPays.filter(p => p.ventaId === v.ventaId).map(safePay);
-      const globalCobros = matching.filter(p => p.tipo !== 'proveedor');
-      const globalPagos = matching.filter(p => p.tipo === 'proveedor');
-      const existingCobroIds = new Set((v.cobros || []).map(c => c.id));
-      const existingPagoIds = new Set((v.pagos || []).map(p => p.id));
-      const newCobros = [...(v.cobros || []).map(safePay), ...globalCobros.filter(c => !existingCobroIds.has(c.id))];
-      const newPagos = [...(v.pagos || []).map(safePay), ...globalPagos.filter(p => !existingPagoIds.has(p.id))];
-      return { ...v, cobros: newCobros, pagos: newPagos };
-    } catch(e) { console.error("mergeGlobalPayments error:", e); return v; }
+      const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      return (pasajeros || []).map(p => {
+        // Si ya tiene DNI y nacimiento, no tocar
+        if (p.dni && p.nacimiento) return p;
+        const match = allPax.find(x =>
+          (p.paxId && x.id === p.paxId) ||
+          (p.nombre && (x.name || '').toLowerCase() === p.nombre.toLowerCase()) ||
+          (p.mail && x.email && x.email.toLowerCase() === p.mail.toLowerCase())
+        );
+        if (!match) return p;
+        return {
+          ...p,
+          tipoDoc: p.tipoDoc || match.tipoDoc || 'DNI',
+          dni: p.dni || match.dni || '',
+          nacimiento: p.nacimiento || match.birthdate || match.nacimiento || '',
+          emision: p.emision || match.docEmision || '',
+          expiracion: p.expiracion || match.docExpiracion || '',
+          mail: p.mail || match.email || '',
+          telefono: p.telefono || match.phone || '',
+          visaUSA: p.visaUSA || match.visaUSA || false,
+          visaNumero: p.visaNumero || match.visaNumero || '',
+          visaTipo: p.visaTipo || match.visaTipo || '',
+          visaEmision: p.visaEmision || match.visaEmision || '',
+          visaExpiracion: p.visaExpiracion || match.visaExpiracion || '',
+          visaEntradas: p.visaEntradas || match.visaEntradas || '',
+          paxId: p.paxId || match.id,
+        };
+      });
+    } catch { return pasajeros || []; }
   };
 
-  const [data, setData] = useState(() => mergeGlobalPayments(venta));
-  // Re-merge whenever venta changes (e.g. after sync)
-  useEffect(() => { setData(mergeGlobalPayments(venta)); }, [venta.id]);
+  const safeVenta = (v) => {
+    let pasajeros = enrichPasajeros(v.pasajeros);
+    // Si el titular no está en la lista, buscarlo en atd_passengers y agregarlo primero
+    const titularNombre = (v.cliente || '').toLowerCase().trim();
+    const titularEnLista = pasajeros.some(p => (p.nombre || '').toLowerCase().trim() === titularNombre);
+    if (!titularEnLista && titularNombre) {
+      try {
+        const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const match = allPax.find(x => (x.name || '').toLowerCase().trim() === titularNombre);
+        if (match) {
+          pasajeros = [{
+            id: Date.now() + 10,
+            nombre: match.name || v.cliente,
+            tipoDoc: match.tipoDoc || 'DNI',
+            dni: match.dni || '',
+            nacimiento: match.birthdate || match.nacimiento || '',
+            emision: match.docEmision || '',
+            expiracion: match.docExpiracion || '',
+            mail: match.email || v.clienteEmail || '',
+            telefono: match.phone || v.clientePhone || '',
+            visaUSA: match.visaUSA || false,
+            visaNumero: match.visaNumero || '',
+            visaTipo: match.visaTipo || '',
+            visaEmision: match.visaEmision || '',
+            visaExpiracion: match.visaExpiracion || '',
+            visaEntradas: match.visaEntradas || '',
+            docAdj: null,
+            paxId: match.id,
+          }, ...pasajeros];
+        }
+      } catch {}
+    }
+    return { ...v, cobros: (v.cobros||[]).map(safePay), pagos: (v.pagos||[]).map(safePay), pasajeros };
+  };
+
+  const [data, setData] = useState(() => safeVenta(venta));
+  useEffect(() => {
+    const enriched = safeVenta(venta);
+    setData(enriched);
+    // Si se agregó el titular automáticamente, persistir el cambio
+    if ((enriched.pasajeros||[]).length > (venta.pasajeros||[]).length) {
+      onUpdate(enriched);
+    }
+  }, [venta.id]);
   const [newPax, setNewPax] = useState({ nombre: "", dni: "", tipoDoc: "DNI", emision: "", expiracion: "", nacimiento: "", mail: "", telefono: "", visaUSA: false, visaNumero: "", visaTipo: "", visaEmision: "", visaExpiracion: "", visaEntradas: "", docAdj: null });
   const [newSvc, setNewSvc] = useState({ tipo: "Vuelo", descripcion: "", precio: "", neto: "", proveedor: "", moneda: "USD", incluido: true });
   const [tcambio, setTcambio] = useState(() => { try { return Number(localStorage.getItem('atd_tcambio') || 0); } catch { return 0; } });
@@ -41260,7 +42479,17 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
     pushToGlobalPayments(cobro);
     setNewCobro({ fecha: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Recibido" });
   };
-  const removeCobro = (id) => update({ cobros: (data.cobros || []).filter(c => c.id !== id) });
+  const removeCobro = (id) => {
+    update({ cobros: (data.cobros || []).filter(c => c.id !== id) });
+    // Also purge from global atd_payments so mergeGlobalPayments doesn't re-inject it
+    try {
+      const prev = JSON.parse(localStorage.getItem('atd_payments') || '[]');
+      const updated = prev.filter(p => p.id !== id);
+      localStorage.setItem('atd_payments', JSON.stringify(updated));
+      SB.saveBlob('ventas', 'atd_payments', updated).catch(() => {});
+      if (setGlobalPayments) setGlobalPayments(updated);
+    } catch(e) { console.error("removeCobro global purge:", e); }
+  };
 
   const addPago = () => {
     if (!newPago.monto) return;
@@ -41278,7 +42507,181 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
     pushToGlobalPayments(pago);
     setNewPago({ fecha: "", proveedor: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Pagado" });
   };
-  const removePago = (id) => update({ pagos: (data.pagos || []).filter(p => p.id !== id) });
+  const removePago = (id) => {
+    update({ pagos: (data.pagos || []).filter(p => p.id !== id) });
+    // Also purge from global atd_payments so mergeGlobalPayments doesn't re-inject it
+    try {
+      const prev = JSON.parse(localStorage.getItem('atd_payments') || '[]');
+      const updated = prev.filter(p => p.id !== id);
+      localStorage.setItem('atd_payments', JSON.stringify(updated));
+      SB.saveBlob('ventas', 'atd_payments', updated).catch(() => {});
+      if (setGlobalPayments) setGlobalPayments(updated);
+    } catch(e) { console.error("removePago global purge:", e); }
+  };
+
+  const generateReciboVenta = (p) => {
+    const esProveedor = p.tipo === "proveedor";
+    const totalVentaUSD = (data.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.precio || 0), 0) || data.monto || 0;
+    const totalNetoUSD = (data.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.neto || 0), 0);
+    const totalCobradoUSD = (data.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
+    const totalPagadoUSD = (data.pagos || []).filter(pg => pg.moneda !== 'ARS').reduce((a, pg) => a + (pg.monto || 0), 0);
+    const saldoCliente = totalVentaUSD - totalCobradoUSD;
+    const saldoProveedor = totalNetoUSD - totalPagadoUSD;
+    const fechaFmtAR = (f) => f ? f.split('-').reverse().join('/') : null;
+    const fechaSaldoCli = (data.servicios||[]).map(s=>s.fechaSaldoCliente).filter(Boolean).sort()[0];
+    const fechaSaldoProv = (data.servicios||[]).map(s=>s.fechaSaldoProveedor).filter(Boolean).sort()[0];
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Recibo ${p.reciboId || p.id}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:0;padding:40px;color:#1a2580;max-width:620px;margin:0 auto}
+      .header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #e8334a;padding-bottom:20px;margin-bottom:30px}
+      .logo{font-size:24px;font-weight:900;color:#1a2580}.logo span{color:#e8334a}
+      .badge{background:#e8334a;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:700}
+      .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}
+      .label{color:#7080b0}.value{font-weight:600;color:#1a2580}
+      .total{background:#f0f4ff;border-radius:8px;padding:20px;margin-top:20px;display:flex;justify-content:space-between;align-items:center}
+      .total-label{font-size:16px;font-weight:700;color:#1a2580}
+      .total-value{font-size:28px;font-weight:900;color:#e8334a}
+      .saldo{background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:14px 20px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+      .saldo-ok{background:#f0fdf4;border-color:#4ade80}
+      .footer{margin-top:40px;text-align:center;color:#7080b0;font-size:12px;border-top:1px solid #eee;padding-top:20px}
+      .stamp{display:inline-block;border:3px solid #4ade80;color:#166534;padding:8px 20px;border-radius:4px;font-size:18px;font-weight:900;transform:rotate(-5deg);margin-top:16px}
+    </style></head><body>
+    <div class="header">
+      <div><img src="/logo.jpg" style="height:60px;object-fit:contain" alt="Alas a tu Destino" />
+      <div style="font-size:11px;color:#7080b0;margin-top:4px">info@alasatudestino.tur.ar · +54 911 23092954</div></div>
+      <div style="text-align:right"><div class="badge">${p.reciboId || 'REC-' + p.id}</div>
+      <div style="font-size:12px;color:#7080b0;margin-top:6px">${p.date || p.fecha}</div></div>
+    </div>
+    <h2 style="color:#e8334a;margin:0 0 20px">${esProveedor ? 'Comprobante de Pago a Proveedor' : 'Recibo de Cobro'}</h2>
+    <div class="row"><span class="label">${esProveedor ? 'Proveedor' : 'Cliente'}</span><span class="value">${esProveedor ? (p.proveedor||'—') : (data.cliente||'—')}</span></div>
+    <div class="row"><span class="label">ID de Venta</span><span class="value">${data.ventaId||'—'}</span></div>
+    ${p.concepto ? `<div class="row"><span class="label">Concepto</span><span class="value">${p.concepto}</span></div>` : ''}
+    <div class="row"><span class="label">Método de Pago</span><span class="value">${p.method||p.metodo}</span></div>
+    <div class="row"><span class="label">Moneda</span><span class="value">${p.moneda||'USD'}</span></div>
+    <div class="row"><span class="label">Estado</span><span class="value">${p.status||p.estado}</span></div>
+    <div class="total"><span class="total-label">MONTO</span><span class="total-value">$${Number(p.amount||p.monto).toLocaleString()} ${p.moneda||'USD'}</span></div>
+    ${!esProveedor ? `
+    <div class="saldo ${saldoCliente <= 0 ? 'saldo-ok' : ''}">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#92400e">${saldoCliente > 0 ? 'Saldo pendiente del cliente' : '✓ Pago completo'}</div>
+        ${saldoCliente > 0 && fechaSaldoCli ? `<div style="font-size:12px;color:#b45309;margin-top:4px">📅 Vence: <strong>${fechaFmtAR(fechaSaldoCli)}</strong></div>` : ''}
+      </div>
+      <span style="font-size:20px;font-weight:900;color:${saldoCliente > 0 ? '#b45309' : '#166634'}">$${Math.max(0,saldoCliente).toLocaleString()} ${p.moneda||'USD'}</span>
+    </div>` : `
+    <div class="saldo ${saldoProveedor <= 0 ? 'saldo-ok' : ''}">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#92400e">${saldoProveedor > 0 ? 'Saldo a pagar al proveedor' : '✓ Pago completo'}</div>
+        ${saldoProveedor > 0 && fechaSaldoProv ? `<div style="font-size:12px;color:#b45309;margin-top:4px">📅 Vence: <strong>${fechaFmtAR(fechaSaldoProv)}</strong></div>` : ''}
+      </div>
+      <span style="font-size:20px;font-weight:900;color:${saldoProveedor > 0 ? '#b45309' : '#166634'}">$${Math.max(0,saldoProveedor).toLocaleString()} ${p.moneda||'USD'}</span>
+    </div>`}
+    <div style="text-align:center;margin-top:20px"><div class="stamp">${(p.status||p.estado) === 'Pagado' || (p.status||p.estado) === 'Recibido' ? '✓ ' + (p.status||p.estado).toUpperCase() : (p.status||p.estado||'').toUpperCase()}</div></div>
+    <div class="footer">Alas a tu Destino · alasatudestino.tur.ar · +54 911 23092954<br>EVT LEG RNAV 19800 · Este comprobante es válido como recibo de pago.</div>
+    <script>window.onload=()=>window.print()</script>
+    </body></html>`);
+    w.document.close();
+  };
+
+  const sendWhatsAppRecibo = (p) => {
+    const esProveedor = p.tipo === "proveedor";
+    const totalVentaUSD = (data.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.precio || 0), 0) || data.monto || 0;
+    const totalCobradoUSD = (data.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
+    const saldo = totalVentaUSD - totalCobradoUSD;
+    const nombre = (data.cliente || "").split(",")[1]?.trim() || data.cliente || "";
+    const phone = (data.clientPhone || "").replace(/\D/g, "").replace(/^0/, "54").replace(/^54?9?/, "549");
+    const fechaFmtAR = (f) => f ? f.split('-').reverse().join('/') : null;
+    const fechaSaldoCli = (data.servicios||[]).map(s=>s.fechaSaldoCliente).filter(Boolean).sort()[0];
+    const saldoLine = saldo > 0
+      ? `\n\n⚠️ Saldo pendiente: *$${saldo.toLocaleString()} USD*${fechaSaldoCli ? `\n📅 Fecha límite de pago: *${fechaFmtAR(fechaSaldoCli)}*` : ''}`
+      : '\n\n✅ Pago total completado!';
+    const msg = esProveedor
+      ? `Hola! Confirmamos pago a ${p.proveedor||''} · ${p.reciboId||''} · $${Number(p.amount||p.monto).toLocaleString()} ${p.moneda||'USD'} · ${p.concepto||''} · ${p.date||p.fecha}`
+      : `Hola ${nombre}! Te confirmamos la recepción de tu pago:\n\n🧾 *${p.reciboId||''}*\n💰 *$${Number(p.amount||p.monto).toLocaleString()} ${p.moneda||'USD'}*\n📋 ${p.concepto||''}\n✅ ${p.status||p.estado}${saldoLine}\n\n_Alas a tu Destino · info@alasatudestino.tur.ar_`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
+  const generateLiquidacionPDF = () => {
+    const totalCobradoUSD = (data.cobros||[]).filter(c=>c.moneda!=='ARS').reduce((a,c)=>a+(c.monto||0),0);
+    const totalCobradoARS = (data.cobros||[]).filter(c=>c.moneda==='ARS').reduce((a,c)=>a+(c.monto||0),0);
+    const saldoUSD = totalUSD - totalCobradoUSD;
+    const fechaFmt = f => f ? f.split('-').reverse().join('/') : null;
+    const fechaSaldo = (data.servicios||[]).map(s=>s.fechaSaldoCliente).filter(Boolean).sort()[0];
+    const fechaSeña = (data.servicios||[]).map(s=>s.fechaSeñaCliente).filter(Boolean).sort()[0];
+    const svcsUSD = (data.servicios||[]).filter(s=>s.moneda!=='ARS');
+    const w = window.open('','_blank');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Liquidación ${data.ventaId||''}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:0;padding:40px;color:#1a2580;max-width:620px;margin:0 auto}
+      .header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #e8334a;padding-bottom:20px;margin-bottom:30px}
+      .logo{font-size:24px;font-weight:900;color:#1a2580}.logo span{color:#e8334a}
+      .badge{background:#e8334a;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:700}
+      .svc-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee;font-size:13px}
+      .svc-tipo{color:#60a5fa;font-size:11px;font-weight:600;margin-right:8px}
+      .svc-desc{color:#1a2580}
+      .svc-precio{font-weight:700;color:#1a2580}
+      .total-row{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#f0f4ff;border-radius:8px;margin-top:16px}
+      .total-label{font-size:16px;font-weight:700;color:#1a2580}
+      .total-value{font-size:26px;font-weight:900;color:#e8334a}
+      .abonado{display:flex;justify-content:space-between;padding:12px 20px;background:#f0fdf4;border-radius:8px;margin-top:8px;border:1px solid #bbf7d0}
+      .saldo-box{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-radius:8px;margin-top:8px}
+      .saldo-pend{background:#fffbeb;border:1px solid #fbbf24}
+      .saldo-ok{background:#f0fdf4;border:1px solid #4ade80}
+      .footer{margin-top:40px;text-align:center;color:#7080b0;font-size:12px;border-top:1px solid #eee;padding-top:20px}
+    </style></head><body>
+    <div class="header">
+      <div><img src="/logo.jpg" style="height:60px;object-fit:contain" alt="Alas a tu Destino" />
+      <div style="font-size:11px;color:#7080b0;margin-top:4px">info@alasatudestino.tur.ar · +54 911 23092954</div></div>
+      <div style="text-align:right"><div class="badge">${data.ventaId||''}</div>
+      <div style="font-size:12px;color:#7080b0;margin-top:6px">${new Date().toLocaleDateString('es-AR')}</div></div>
+    </div>
+    <h2 style="color:#e8334a;margin:0 0 6px">Liquidación de Viaje</h2>
+    <div style="font-size:15px;font-weight:700;color:#1a2580;margin-bottom:4px">${data.cliente||''}</div>
+    <div style="font-size:13px;color:#7080b0;margin-bottom:20px">${data.destino||''} · ${data.fecha||''}</div>
+    ${svcsUSD.map(s=>`
+      <div class="svc-row">
+        <div><span class="svc-tipo">${s.tipo}</span><span class="svc-desc">${s.descripcion}</span></div>
+        <span class="svc-precio">${s.precio>0?'$'+Number(s.precio).toLocaleString()+' USD':'Incluido'}</span>
+      </div>`).join('')}
+    <div class="total-row">
+      <span class="total-label">TOTAL DEL VIAJE</span>
+      <span class="total-value">$${totalUSD.toLocaleString()} USD</span>
+    </div>
+    ${totalCobradoUSD>0?`
+    <div class="abonado">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#166534">✓ Abonado${fechaSeña?` · Seña: ${fechaFmt(fechaSeña)}`:''}  </div>
+        ${totalCobradoARS>0?`<div style="font-size:11px;color:#7080b0">+ $${totalCobradoARS.toLocaleString('es-AR')} ARS</div>`:''}
+      </div>
+      <span style="font-size:18px;font-weight:900;color:#166534">-$${totalCobradoUSD.toLocaleString()} USD</span>
+    </div>`:''}
+    <div class="saldo-box ${saldoUSD<=0?'saldo-ok':'saldo-pend'}">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:${saldoUSD<=0?'#166534':'#92400e'}">${saldoUSD<=0?'✅ PAGO COMPLETO':'⏳ SALDO PENDIENTE'}</div>
+        ${saldoUSD>0&&fechaSaldo?`<div style="font-size:12px;color:#b45309;margin-top:4px">📅 Fecha límite: <strong>${fechaFmt(fechaSaldo)}</strong></div>`:''}
+      </div>
+      ${saldoUSD>0?`<span style="font-size:24px;font-weight:900;color:#b45309">$${saldoUSD.toLocaleString()} USD</span>`:''}
+    </div>
+    <div class="footer">Alas a tu Destino · alasatudestino.tur.ar · +54 911 23092954<br>EVT LEG RNAV 19800</div>
+    <script>window.onload=()=>window.print()</script>
+    </body></html>`);
+    w.document.close();
+  };
+
+  const sendWhatsAppLiquidacion = () => {
+    const totalCobradoUSD = (data.cobros||[]).filter(c=>c.moneda!=='ARS').reduce((a,c)=>a+(c.monto||0),0);
+    const saldoUSD = totalUSD - totalCobradoUSD;
+    const nombre = (data.cliente||'').split(',')[1]?.trim() || data.cliente || '';
+    const phone = (data.clientPhone||'').replace(/\D/g,'').replace(/^0/,'54').replace(/^54?9?/,'549');
+    const fechaFmt = f => f ? f.split('-').reverse().join('/') : null;
+    const fechaSaldo = (data.servicios||[]).map(s=>s.fechaSaldoCliente).filter(Boolean).sort()[0];
+    const svcsUSD = (data.servicios||[]).filter(s=>s.moneda!=='ARS');
+    const lineasSvcs = svcsUSD.map(s=>`▪ ${s.tipo}: ${s.descripcion} — ${s.precio>0?'$'+Number(s.precio).toLocaleString()+' USD':'Incluido'}`).join('\n');
+    const msg = `Hola ${nombre}! Te enviamos la liquidación de tu viaje ✈️\n\n📋 *${data.ventaId||''}* · ${data.destino||''}\n\n${lineasSvcs}\n\n💰 *Total: $${totalUSD.toLocaleString()} USD*${totalCobradoUSD>0?`\n✅ Abonado: $${totalCobradoUSD.toLocaleString()} USD`:''}${saldoUSD>0?`\n⏳ *Saldo: $${saldoUSD.toLocaleString()} USD*${fechaSaldo?`\n📅 Fecha límite: *${fechaFmt(fechaSaldo)}*`:''}`:'\n✅ Pago completo!'}\n\n_Alas a tu Destino · info@alasatudestino.tur.ar_`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,'_blank');
+  };
 
   const update = (changes) => { const updated = { ...data, ...changes }; setData(updated); onUpdate(updated); };
 
@@ -41387,6 +42790,59 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 <textarea style={{ ...S.input, height: 80, resize: "vertical" }} value={data.notas||""} onChange={e => update({ notas: e.target.value })} placeholder="Observaciones generales..." />
               </div>
             </div>
+            {/* PASAJERO PRINCIPAL editable */}
+            {(() => {
+              const titular = (data.pasajeros || [])[0];
+              if (!titular) return null;
+              const updateTitular = (changes) => {
+                const updatedPax = (data.pasajeros || []).map((p, i) => i === 0 ? { ...p, ...changes } : p);
+                if (titular.paxId) {
+                  try {
+                    const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+                    const updatedAll = allPax.map(x => x.id === titular.paxId ? { ...x, name: changes.nombre || x.name, email: changes.mail || x.email, phone: changes.telefono || x.phone, dni: changes.dni || x.dni, birthdate: changes.nacimiento || x.birthdate, docExpiracion: changes.expiracion || x.docExpiracion } : x);
+                    localStorage.setItem('atd_passengers', JSON.stringify(updatedAll));
+                  } catch {}
+                }
+                update({ pasajeros: updatedPax });
+              };
+              return (
+                <div style={{ marginTop: 16, background: "rgba(232,51,74,0.04)", border: "1px solid rgba(232,51,74,0.25)", borderRadius: 10, padding: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", letterSpacing: "0.08em", marginBottom: 12 }}>👤 PASAJERO PRINCIPAL — {titular.nombre}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                    <div style={{ gridColumn: "1/-1" }}>
+                      <label style={S.label}>Nombre completo</label>
+                      <input style={S.input} value={titular.nombre || ""} onChange={e => updateTitular({ nombre: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Tipo documento</label>
+                      <select style={S.input} value={titular.tipoDoc || "DNI"} onChange={e => updateTitular({ tipoDoc: e.target.value })}>
+                        {["DNI","Pasaporte","CE"].map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Nº Documento</label>
+                      <input style={S.input} value={titular.dni || ""} onChange={e => updateTitular({ dni: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Fecha de Nacimiento</label>
+                      <input type="date" style={S.input} value={titular.nacimiento || ""} onChange={e => updateTitular({ nacimiento: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Email</label>
+                      <input type="email" style={S.input} value={titular.mail || ""} onChange={e => updateTitular({ mail: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Teléfono</label>
+                      <input style={S.input} value={titular.telefono || ""} onChange={e => updateTitular({ telefono: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Expiración documento</label>
+                      <input type="date" style={S.input} value={titular.expiracion || ""} onChange={e => updateTitular({ expiracion: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           )}
 
           {/* TAB PASAJEROS */}
@@ -41429,11 +42885,21 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                     onChange={() => {}}
                     onSelect={p => {
                       setNewPax({
-                        nombre: p.name || "", tipoDoc: p.tipoDoc || "DNI", dni: p.dni || "",
-                        nacimiento: p.birthdate || "", emision: p.docEmision || "", expiracion: p.docExpiracion || "",
-                        mail: p.email || "", telefono: p.phone || "", docAdj: null,
-                        visaUSA: p.visaUSA || false, visaNumero: p.visaNumero || "", visaTipo: p.visaTipo || "",
-                        visaEntradas: p.visaEntradas || "", visaEmision: p.visaEmision || "", visaExpiracion: p.visaExpiracion || ""
+                        nombre: p.name || p.nombre || "",
+                        tipoDoc: p.tipoDoc || "DNI",
+                        dni: p.dni || "",
+                        nacimiento: p.birthdate || p.nacimiento || "",
+                        emision: p.docEmision || p.emision || "",
+                        expiracion: p.docExpiracion || p.expiracion || p.passport_expiry || "",
+                        mail: p.email || p.mail || "",
+                        telefono: p.phone || p.telefono || "",
+                        docAdj: null,
+                        visaUSA: p.visaUSA || false,
+                        visaNumero: p.visaNumero || p.visaNumber || "",
+                        visaTipo: p.visaTipo || "",
+                        visaEntradas: p.visaEntradas || "",
+                        visaEmision: p.visaEmision || "",
+                        visaExpiracion: p.visaExpiracion || "",
                       });
                     }}
                   />
@@ -41573,6 +43039,141 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               }} />
                             </div>
                           </div>
+                          {/* Fechas límite de pago */}
+                          <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
+                            <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 8, letterSpacing: "0.08em" }}>📅 FECHAS LÍMITE DE PAGO</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                              <div>
+                                <label style={{ ...S.label, color: "#4ade80" }}>Seña cliente</label>
+                                <input type="date" style={S.input} value={s.fechaSeñaCliente||""} onChange={e => {
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, fechaSeñaCliente: e.target.value} : x);
+                                  update({ servicios: u });
+                                }} />
+                              </div>
+                              <div>
+                                <label style={{ ...S.label, color: "#4ade80" }}>Saldo cliente</label>
+                                <input type="date" style={S.input} value={s.fechaSaldoCliente||""} onChange={e => {
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, fechaSaldoCliente: e.target.value} : x);
+                                  update({ servicios: u });
+                                }} />
+                              </div>
+                              <div>
+                                <label style={{ ...S.label, color: "#60a5fa" }}>Seña proveedor</label>
+                                <input type="date" style={S.input} value={s.fechaSeñaProveedor||""} onChange={e => {
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, fechaSeñaProveedor: e.target.value} : x);
+                                  update({ servicios: u });
+                                }} />
+                              </div>
+                              <div>
+                                <label style={{ ...S.label, color: "#60a5fa" }}>Saldo proveedor</label>
+                                <input type="date" style={S.input} value={s.fechaSaldoProveedor||""} onChange={e => {
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, fechaSaldoProveedor: e.target.value} : x);
+                                  update({ servicios: u });
+                                }} />
+                              </div>
+                            </div>
+                          </div>
+                          {/* SECCIÓN VUELOS */}
+                          {s.tipo === 'Vuelo' && (
+                            <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
+                              <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 8, letterSpacing: "0.08em" }}>✈️ ITINERARIO DE VUELO</div>
+                              <div style={{ marginBottom: 8 }}>
+                                <label style={S.label}>Tipo de ruta</label>
+                                <select style={S.input} value={s.tipoRuta||'Ida y Vuelta'} onChange={e => {
+                                  const tipoRuta = e.target.value;
+                                  let segs = s.segmentosVuelo || [];
+                                  if (tipoRuta === 'Ida' && segs.length === 0) segs = [{ id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  if (tipoRuta === 'Ida y Vuelta' && segs.length < 2) segs = [segs[0]||{ id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }, { id: Date.now()+1, origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, tipoRuta, segmentosVuelo: segs} : x);
+                                  update({ servicios: u });
+                                }}>
+                                  {['Ida','Ida y Vuelta','Multidestino'].map(t => <option key={t}>{t}</option>)}
+                                </select>
+                              </div>
+                              {(s.segmentosVuelo||[{ id: 1, origen: '', destino: '', fechaSalida: '', horaSalida: '' }]).map((seg, idx) => (
+                                <div key={seg.id} style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', fontFamily: 'system-ui' }}>
+                                      {s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? '✈️ IDA' : '✈️ VUELTA') : `✈️ TRAMO ${idx + 1}`}
+                                    </span>
+                                    {s.tipoRuta === 'Multidestino' && (s.segmentosVuelo||[]).length > 1 && (
+                                      <button style={{ ...S.btn('danger'), padding: '2px 6px', fontSize: 10 }} onClick={() => {
+                                        const segs = (s.segmentosVuelo||[]).filter((_,i) => i !== idx);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }}>✕</button>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+                                    <div><label style={S.label}>Origen</label>
+                                      <CiudadAeropuertoSearch
+                                        value={seg.origen||''}
+                                        placeholder="BUE, Buenos Aires..."
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, origen: v} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                    <div><label style={S.label}>Destino</label>
+                                      <CiudadAeropuertoSearch
+                                        value={seg.destino||''}
+                                        placeholder="VCE, Venecia..."
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, destino: v} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                                    <div>
+                                      <label style={S.label}>Cía. Aérea (IATA)</label>
+                                      <AerolineaSearch
+                                        value={seg.aerolinea||''}
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, aerolinea: v.toUpperCase()} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={S.label}>N° Vuelo</label>
+                                      <input style={S.input} placeholder="AR1234" value={seg.numeroVuelo||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, numeroVuelo: e.target.value.toUpperCase()} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                    <div><label style={S.label}>Fecha salida</label>
+                                      <input type="date" style={S.input} value={seg.fechaSalida||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, fechaSalida: e.target.value} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                    <div><label style={S.label}>Hora salida</label>
+                                      <input type="time" style={S.input} value={seg.horaSalida||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, horaSalida: e.target.value} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {s.tipoRuta === 'Multidestino' && (
+                                <button style={{ ...S.btn('ghost'), fontSize: 11, padding: '4px 10px' }} onClick={() => {
+                                  const segs = [...(s.segmentosVuelo||[]), { id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                  update({ servicios: u });
+                                }}>+ Agregar tramo</button>
+                              )}
+                            </div>
+                          )}
                           <button style={{ ...S.btn("primary"), fontSize: 12 }} onClick={() => {
                             const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, _editing: false} : x);
                             update({ servicios: u });
@@ -41602,6 +43203,60 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                           {s.obsInternas && (
                             <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", fontStyle: "italic", background: "#0f1535", borderRadius: 6, padding: "6px 10px", marginBottom: 8 }}>
                               📝 {s.obsInternas}
+                            </div>
+                          )}
+                          {(s.fechaSeñaCliente || s.fechaSaldoCliente || s.fechaSeñaProveedor || s.fechaSaldoProveedor) && (() => {
+                            const hoy = new Date().toISOString().split('T')[0];
+                            const colorFecha = (f) => !f ? "#3a4a80" : f < hoy ? "#f87171" : f <= new Date(Date.now()+7*86400000).toISOString().split('T')[0] ? "#fbbf24" : "#4ade80";
+                            const labelFecha = (f) => !f ? "—" : f < hoy ? `${f} ⚠️` : f;
+                            return (
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                                {s.fechaSeñaCliente && <div style={{ background: "#0f1535", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontFamily: "system-ui" }}><span style={{ color: "#7080b0" }}>Seña cliente: </span><span style={{ color: colorFecha(s.fechaSeñaCliente), fontWeight: 600 }}>{labelFecha(s.fechaSeñaCliente)}</span></div>}
+                                {s.fechaSaldoCliente && <div style={{ background: "#0f1535", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontFamily: "system-ui" }}><span style={{ color: "#7080b0" }}>Saldo cliente: </span><span style={{ color: colorFecha(s.fechaSaldoCliente), fontWeight: 600 }}>{labelFecha(s.fechaSaldoCliente)}</span></div>}
+                                {s.fechaSeñaProveedor && <div style={{ background: "#0f1535", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontFamily: "system-ui" }}><span style={{ color: "#7080b0" }}>Seña proveed.: </span><span style={{ color: colorFecha(s.fechaSeñaProveedor), fontWeight: 600 }}>{labelFecha(s.fechaSeñaProveedor)}</span></div>}
+                                {s.fechaSaldoProveedor && <div style={{ background: "#0f1535", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontFamily: "system-ui" }}><span style={{ color: "#7080b0" }}>Saldo proveed.: </span><span style={{ color: colorFecha(s.fechaSaldoProveedor), fontWeight: 600 }}>{labelFecha(s.fechaSaldoProveedor)}</span></div>}
+                              </div>
+                            );
+                          })()}
+                          {/* ITINERARIO DE VUELO — view mode */}
+                          {s.tipo === 'Vuelo' && (s.segmentosVuelo||[]).length > 0 && (
+                            <div style={{ marginTop: 8, background: '#0a1020', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 8, padding: '10px 14px' }}>
+                              <div style={{ fontSize: 10, color: '#60a5fa', fontFamily: 'system-ui', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>
+                                ✈️ ITINERARIO — {s.tipoRuta || 'Ida y Vuelta'}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {(s.segmentosVuelo||[]).map((seg, idx) => {
+                                  const label = s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? 'IDA' : 'VUELTA') : `TRAMO ${idx+1}`;
+                                  const fechaFmt = seg.fechaSalida ? seg.fechaSalida.split('-').reverse().join('/') : '—';
+                                  const hora = seg.horaSalida || '';
+                                  const ciudadOrigen = resolverCiudad(seg.origen);
+                                  const ciudadDestino = resolverCiudad(seg.destino);
+                                  const aerolineaNombre = seg.aerolinea ? (AEROLINEA_MAP[seg.aerolinea.toUpperCase()] || seg.aerolinea) : null;
+                                  return (
+                                    <div key={seg.id || idx} style={{ background: 'rgba(96,165,250,0.05)', borderRadius: 6, padding: '8px 10px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: aerolineaNombre || seg.numeroVuelo ? 4 : 0, fontFamily: 'system-ui' }}>
+                                        <span style={{ fontSize: 10, background: 'rgba(96,165,250,0.2)', color: '#60a5fa', borderRadius: 4, padding: '1px 7px', fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{label}</span>
+                                        <span style={{ color: '#c8d4f0', fontWeight: 700, fontSize: 13 }}>{ciudadOrigen}</span>
+                                        <span style={{ color: '#60a5fa', fontSize: 14 }}>→</span>
+                                        <span style={{ color: '#c8d4f0', fontWeight: 700, fontSize: 13 }}>{ciudadDestino}</span>
+                                        {seg.fechaSalida && (
+                                          <span style={{ marginLeft: 'auto', color: '#fbbf24', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>📅 {fechaFmt}{hora ? ` · ${hora}hs` : ''}</span>
+                                        )}
+                                      </div>
+                                      {(aerolineaNombre || seg.numeroVuelo) && (
+                                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, fontFamily: 'system-ui', paddingLeft: 4 }}>
+                                          {aerolineaNombre && (
+                                            <span style={{ color: '#a78bfa' }}>✈ {seg.aerolinea?.toUpperCase()} · {aerolineaNombre}</span>
+                                          )}
+                                          {seg.numeroVuelo && (
+                                            <span style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', borderRadius: 4, padding: '1px 8px', fontWeight: 700, fontFamily: 'monospace' }}>{seg.numeroVuelo}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -41719,27 +43374,56 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
             const totalCobradoARS = cobros.filter(c => c.moneda === 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
             const totalPagadoUSD = pagos.filter(p => p.moneda !== 'ARS').reduce((a, p) => a + (p.monto || 0), 0);
             const totalPagadoARS = pagos.filter(p => p.moneda === 'ARS').reduce((a, p) => a + (p.monto || 0), 0);
-            const saldoUSD = totalCobradoUSD - totalPagadoUSD;
-            const saldoARS = totalCobradoARS - totalPagadoARS;
             const totalVentaUSD = (data.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.precio || 0), 0) || data.monto || 0;
+            const totalNetoUSD = (data.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (s.neto || 0), 0);
             const pendienteCobrarUSD = totalVentaUSD - totalCobradoUSD;
+            const pendientePagarUSD = totalNetoUSD - totalPagadoUSD;
+
+            // Agrupado por proveedor para balance individual
+            const proveedoresServicios = {};
+            (data.servicios || []).filter(s => s.moneda !== 'ARS').forEach(s => {
+              const prov = s.proveedor || 'Sin proveedor';
+              if (!proveedoresServicios[prov]) proveedoresServicios[prov] = { neto: 0, pagado: 0 };
+              proveedoresServicios[prov].neto += s.neto || 0;
+            });
+            pagos.filter(p => p.moneda !== 'ARS').forEach(p => {
+              const prov = p.proveedor || 'Sin proveedor';
+              if (!proveedoresServicios[prov]) proveedoresServicios[prov] = { neto: 0, pagado: 0 };
+              proveedoresServicios[prov].pagado += p.monto || 0;
+            });
+
             return (
             <div>
               {/* Cuenta Corriente Balance */}
               <div style={{ background: "linear-gradient(135deg, #1a2a5e, #111d3c)", border: "1px solid #e8334a", borderRadius: 10, padding: "14px 20px", marginBottom: 20 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", marginBottom: 12, letterSpacing: "0.1em" }}>📊 CUENTA CORRIENTE</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-                  {[
-                    ["Total a Cobrar", `$${totalVentaUSD.toLocaleString()} USD`, "#ffffff"],
-                    ["Cobrado", `$${totalCobradoUSD.toLocaleString()} USD`, "#4ade80"],
-                    ["Pendiente Cobrar", `$${pendienteCobrarUSD.toLocaleString()} USD`, pendienteCobrarUSD > 0 ? "#fbbf24" : "#4ade80"],
-                    ["Pagado a Proveed.", `$${totalPagadoUSD.toLocaleString()} USD`, "#60a5fa"],
-                  ].map(([l, v, c]) => (
-                    <div key={l} style={{ background: "#0f1535", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>{l}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: c }}>{v}</div>
-                    </div>
-                  ))}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 10 }}>
+                  <div style={{ background: "#0f1535", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>TOTAL VENTA</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#ffffff" }}>${totalVentaUSD.toLocaleString()} USD</div>
+                  </div>
+                  <div style={{ background: "#0f1535", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>COBRADO</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#4ade80" }}>${totalCobradoUSD.toLocaleString()} USD</div>
+                  </div>
+                  <div style={{ background: pendienteCobrarUSD > 0 ? "rgba(251,191,36,0.08)" : "#0f1535", border: pendienteCobrarUSD > 0 ? "1px solid rgba(251,191,36,0.3)" : "none", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>SALDO A COBRAR</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: pendienteCobrarUSD > 0 ? "#fbbf24" : "#4ade80" }}>${pendienteCobrarUSD.toLocaleString()} USD</div>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                  <div style={{ background: "#0f1535", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>TOTAL NETO PROVEED.</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#c8d4f0" }}>${totalNetoUSD.toLocaleString()} USD</div>
+                  </div>
+                  <div style={{ background: "#0f1535", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>PAGADO A PROVEED.</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#60a5fa" }}>${totalPagadoUSD.toLocaleString()} USD</div>
+                  </div>
+                  <div style={{ background: pendientePagarUSD > 0 ? "rgba(248,113,113,0.08)" : "#0f1535", border: pendientePagarUSD > 0 ? "1px solid rgba(248,113,113,0.3)" : "none", borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui", marginBottom: 4 }}>SALDO A PAGAR</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: pendientePagarUSD > 0 ? "#f87171" : "#4ade80" }}>${pendientePagarUSD.toLocaleString()} USD</div>
+                  </div>
                 </div>
                 {(totalCobradoARS > 0 || totalPagadoARS > 0) && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
@@ -41767,13 +43451,29 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                       <span style={{ color: "#7080b0", marginLeft: 10 }}>{c.metodo}</span>
                       {c.concepto && <span style={{ color: "#7080b0", marginLeft: 10 }}>· {c.concepto}</span>}
                       {c.fecha && <span style={{ color: "#3a4a80", marginLeft: 10 }}>{c.fecha}</span>}
+                      {c.reciboId && <span style={{ color: "#3a4a80", marginLeft: 10, fontSize: 11 }}>{c.reciboId}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <span style={S.badge(c.estado === "Recibido" ? "green" : "yellow")}>{c.estado}</span>
+                      <button title="Ver recibo" onClick={() => generateReciboVenta(c)} style={{ ...S.btn("ghost"), padding: "3px 8px", fontSize: 11 }}>🧾</button>
+                      <button title="Enviar por WhatsApp" onClick={() => sendWhatsAppRecibo(c)} style={{ ...S.btn("ghost"), padding: "3px 8px", fontSize: 11 }}>📱</button>
                       <button onClick={() => removeCobro(c.id)} style={{ ...S.btn("danger"), padding: "3px 8px", fontSize: 11 }}>✕</button>
                     </div>
                   </div>
                 ))}
+                {cobros.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: pendienteCobrarUSD > 0 ? "rgba(251,191,36,0.06)" : "rgba(74,222,128,0.06)", border: `1px solid ${pendienteCobrarUSD > 0 ? "rgba(251,191,36,0.25)" : "rgba(74,222,128,0.25)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+                    <div style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>
+                      Cobrado <strong style={{ color: "#4ade80" }}>${totalCobradoUSD.toLocaleString()} USD</strong>
+                      {totalCobradoARS > 0 && <span style={{ marginLeft: 8 }}>+ <strong style={{ color: "#4ade80" }}>${totalCobradoARS.toLocaleString("es-AR")} ARS</strong></span>}
+                      <span style={{ margin: "0 8px" }}>·</span>
+                      Total venta <strong style={{ color: "#ffffff" }}>${totalVentaUSD.toLocaleString()} USD</strong>
+                    </div>
+                    <div style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: pendienteCobrarUSD > 0 ? "#fbbf24" : "#4ade80" }}>
+                      {pendienteCobrarUSD > 0 ? `Saldo pendiente: $${pendienteCobrarUSD.toLocaleString()} USD` : "✓ Cobrado completo"}
+                    </div>
+                  </div>
+                )}
                 <div style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 8, padding: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                     <div><label style={S.label}>Fecha</label><input type="date" style={S.input} value={newCobro.fecha} onChange={e => setNewCobro({...newCobro, fecha: e.target.value})} /></div>
@@ -41804,6 +43504,25 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
               {/* PAGOS A PROVEEDORES */}
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", marginBottom: 10 }}>🏢 Pagos a Proveedores</div>
+                {/* Balance por proveedor */}
+                {Object.keys(proveedoresServicios).length > 0 && (
+                  <div style={{ background: "#0f1535", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 8, letterSpacing: "0.08em" }}>BALANCE POR PROVEEDOR</div>
+                    {Object.entries(proveedoresServicios).map(([prov, bal]) => {
+                      const saldo = bal.neto - bal.pagado;
+                      return (
+                        <div key={prov} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #1e2e6a" }}>
+                          <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#c8d4f0", fontWeight: 600 }}>{prov}</span>
+                          <div style={{ display: "flex", gap: 16, fontFamily: "system-ui", fontSize: 12 }}>
+                            <span style={{ color: "#7080b0" }}>Neto: <strong style={{ color: "#c8d4f0" }}>${bal.neto.toLocaleString()}</strong></span>
+                            <span style={{ color: "#7080b0" }}>Pagado: <strong style={{ color: "#60a5fa" }}>${bal.pagado.toLocaleString()}</strong></span>
+                            <span style={{ color: "#7080b0" }}>Saldo: <strong style={{ color: saldo > 0 ? "#f87171" : "#4ade80" }}>${saldo.toLocaleString()} USD</strong></span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {pagos.length === 0 ? (
                   <div style={{ color: "#3a4a80", fontFamily: "system-ui", fontSize: 12, padding: "8px 0", marginBottom: 8 }}>Sin pagos registrados</div>
                 ) : pagos.map(p => (
@@ -41814,13 +43533,27 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                       <span style={{ color: "#7080b0", marginLeft: 10 }}>{p.metodo}</span>
                       {p.concepto && <span style={{ color: "#7080b0", marginLeft: 10 }}>· {p.concepto}</span>}
                       {p.fecha && <span style={{ color: "#3a4a80", marginLeft: 10 }}>{p.fecha}</span>}
+                      {p.reciboId && <span style={{ color: "#3a4a80", marginLeft: 10, fontSize: 11 }}>{p.reciboId}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <span style={S.badge(p.estado === "Pagado" ? "green" : "yellow")}>{p.estado}</span>
+                      <button title="Ver comprobante" onClick={() => generateReciboVenta(p)} style={{ ...S.btn("ghost"), padding: "3px 8px", fontSize: 11 }}>🧾</button>
                       <button onClick={() => removePago(p.id)} style={{ ...S.btn("danger"), padding: "3px 8px", fontSize: 11 }}>✕</button>
                     </div>
                   </div>
                 ))}
+                {pagos.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: pendientePagarUSD > 0 ? "rgba(248,113,113,0.06)" : "rgba(74,222,128,0.06)", border: `1px solid ${pendientePagarUSD > 0 ? "rgba(248,113,113,0.25)" : "rgba(74,222,128,0.25)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+                    <div style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>
+                      Pagado <strong style={{ color: "#60a5fa" }}>${totalPagadoUSD.toLocaleString()} USD</strong>
+                      <span style={{ margin: "0 8px" }}>·</span>
+                      Total neto <strong style={{ color: "#c8d4f0" }}>${totalNetoUSD.toLocaleString()} USD</strong>
+                    </div>
+                    <div style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: pendientePagarUSD > 0 ? "#f87171" : "#4ade80" }}>
+                      {pendientePagarUSD > 0 ? `Saldo a pagar: $${pendientePagarUSD.toLocaleString()} USD` : "✓ Pago completo"}
+                    </div>
+                  </div>
+                )}
                 <div style={{ background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.15)", borderRadius: 8, padding: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                     <div><label style={S.label}>Fecha</label><input type="date" style={S.input} value={newPago.fecha} onChange={e => setNewPago({...newPago, fecha: e.target.value})} /></div>
@@ -41851,57 +43584,232 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
           {/* TAB FACTURACION */}
           {tab === "facturacion" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Razón Social / Nombre de Facturación</label><input style={S.input} value={data.facRazonSocial||""} onChange={e => update({ facRazonSocial: e.target.value })} /></div>
-              <div><label style={S.label}>CUIT / DNI</label><input style={S.input} value={data.facCuit||""} onChange={e => update({ facCuit: e.target.value })} /></div>
-              <div><label style={S.label}>Condición IVA</label>
-                <select style={S.input} value={data.facIva||"Consumidor Final"} onChange={e => update({ facIva: e.target.value })}>
-                  {["Consumidor Final","Responsable Inscripto","Monotributista","Exento"].map(t => <option key={t}>{t}</option>)}
-                </select>
+            <div>
+              {(data.pasajeros || []).length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", letterSpacing: "0.08em" }}>👥 PASAJEROS DE LA VENTA</div>
+                    <button style={{ ...S.btn("ghost"), padding: "4px 12px", fontSize: 11 }} onClick={() => {
+                      const lineas = (data.pasajeros || []).map(p => `• ${p.nombre}${p.tipoDoc && p.dni ? ` · ${p.tipoDoc}: ${p.dni}` : ""}${p.nacimiento ? ` · Nac: ${p.nacimiento.split("-").reverse().join("/")}` : ""}${p.mail ? ` · ${p.mail}` : ""}${p.telefono ? ` · Tel: ${p.telefono}` : ""}`).join("\n");
+                      const texto = `Pasajeros — ${data.ventaId || ""} · ${data.cliente || ""}\n${data.destino || ""} · ${data.fecha || ""}\n\n${lineas}`;
+                      navigator.clipboard.writeText(texto).then(() => alert("✓ Copiado al portapapeles")).catch(() => { const ta = document.createElement("textarea"); ta.value = texto; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); alert("✓ Copiado al portapapeles"); });
+                    }}>📋 Copiar para mail</button>
+                  </div>
+                  {(data.pasajeros || []).map((p, i) => (
+                    <div key={p.id} style={{ background: "#111d3c", border: `1px solid ${i === 0 ? "#e8334a" : "#1e2e6a"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                      {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", background: "rgba(232,51,74,0.1)", padding: "2px 8px", borderRadius: 10 }}>TITULAR</span>}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", fontFamily: "system-ui" }}>{p.nombre}</span>
+                      {p.tipoDoc && p.dni && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{p.tipoDoc}: {p.dni}</span>}
+                      {p.nacimiento && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>Nac: {p.nacimiento.split("-").reverse().join("/")}</span>}
+                      {p.mail && <span style={{ fontSize: 11, color: "#60a5fa", fontFamily: "system-ui" }}>✉ {p.mail}</span>}
+                      {p.telefono && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>📞 {p.telefono}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", letterSpacing: "0.08em", marginBottom: 12 }}>🧾 DATOS DE FACTURACIÓN</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Razón Social / Nombre de Facturación</label><input style={S.input} value={data.facRazonSocial||""} onChange={e => update({ facRazonSocial: e.target.value })} /></div>
+                <div><label style={S.label}>CUIT / DNI</label><input style={S.input} value={data.facCuit||""} onChange={e => update({ facCuit: e.target.value })} /></div>
+                <div><label style={S.label}>Condición IVA</label>
+                  <select style={S.input} value={data.facIva||"Consumidor Final"} onChange={e => update({ facIva: e.target.value })}>
+                    {["Consumidor Final","Responsable Inscripto","Monotributista","Exento"].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div><label style={S.label}>Email de facturación</label><input type="email" style={S.input} value={data.facEmail||""} onChange={e => update({ facEmail: e.target.value })} /></div>
+                <div><label style={S.label}>Teléfono</label><input style={S.input} value={data.facTel||""} onChange={e => update({ facTel: e.target.value })} /></div>
+                <div><label style={S.label}>Calle y número</label><input style={S.input} value={data.facCalle||""} onChange={e => update({ facCalle: e.target.value })} /></div>
+                <div><label style={S.label}>Ciudad</label><input style={S.input} value={data.facCiudad||""} onChange={e => update({ facCiudad: e.target.value })} /></div>
+                <div><label style={S.label}>Provincia</label><input style={S.input} value={data.facProvincia||""} onChange={e => update({ facProvincia: e.target.value })} /></div>
+                <div><label style={S.label}>País</label><input style={S.input} value={data.facPais||"Argentina"} onChange={e => update({ facPais: e.target.value })} /></div>
+                <div><label style={S.label}>Código Postal</label><input style={S.input} value={data.facCP||""} onChange={e => update({ facCP: e.target.value })} /></div>
               </div>
-              <div><label style={S.label}>Email de facturación</label><input type="email" style={S.input} value={data.facEmail||""} onChange={e => update({ facEmail: e.target.value })} /></div>
-              <div><label style={S.label}>Teléfono</label><input style={S.input} value={data.facTel||""} onChange={e => update({ facTel: e.target.value })} /></div>
-              <div><label style={S.label}>Calle y número</label><input style={S.input} value={data.facCalle||""} onChange={e => update({ facCalle: e.target.value })} /></div>
-              <div><label style={S.label}>Ciudad</label><input style={S.input} value={data.facCiudad||""} onChange={e => update({ facCiudad: e.target.value })} /></div>
-              <div><label style={S.label}>Provincia</label><input style={S.input} value={data.facProvincia||""} onChange={e => update({ facProvincia: e.target.value })} /></div>
-              <div><label style={S.label}>País</label><input style={S.input} value={data.facPais||"Argentina"} onChange={e => update({ facPais: e.target.value })} /></div>
-              <div><label style={S.label}>Código Postal</label><input style={S.input} value={data.facCP||""} onChange={e => update({ facCP: e.target.value })} /></div>
             </div>
           )}
 
           {/* TAB TOTALES */}
-          {tab === "totales" && (
+          {tab === "totales" && (() => {
+            const totalCobradoUSD = (data.cobros||[]).filter(c => c.moneda !== 'ARS').reduce((a,c) => a+(c.monto||0), 0);
+            const totalCobradoARS = (data.cobros||[]).filter(c => c.moneda === 'ARS').reduce((a,c) => a+(c.monto||0), 0);
+            const saldoUSD = totalUSD - totalCobradoUSD;
+            const saldoARS = totalARS - totalCobradoARS;
+            const fechaFmt = f => f ? f.split('-').reverse().join('/') : null;
+            const fechaSaldo = (data.servicios||[]).map(s=>s.fechaSaldoCliente).filter(Boolean).sort()[0];
+            const fechaSeña = (data.servicios||[]).map(s=>s.fechaSeñaCliente).filter(Boolean).sort()[0];
+            const hoy = new Date().toISOString().split('T')[0];
+            const colorFecha = f => !f ? "#7080b0" : f < hoy ? "#f87171" : f <= new Date(Date.now()+7*86400000).toISOString().split('T')[0] ? "#fbbf24" : "#4ade80";
+            return (
             <div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={S.label}>Monto USD (manual si no hay servicios)</label>
-                <input type="number" style={{ ...S.input, maxWidth: 200 }} value={data.monto||""} onChange={e => update({ monto: Number(e.target.value) })} />
-              </div>
-              <div style={{ marginBottom: 20 }}>
-                <label style={S.label}>Tipo de cambio (ARS por USD)</label>
-                <input type="number" style={{ ...S.input, maxWidth: 200 }} value={tcambio} onChange={e => { setTcambio(Number(e.target.value)); try { localStorage.setItem('atd_tcambio', e.target.value); } catch {} }} />
-              </div>
-              <div style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ padding: "14px 20px", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: "system-ui", fontSize: 13, color: "#7080b0" }}>Total en USD</span>
-                  <span style={{ fontFamily: "system-ui", fontSize: 20, color: "#e8334a", fontWeight: 700 }}>${totalUSD.toLocaleString()} USD</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                <div>
+                  <label style={S.label}>Monto USD (manual si no hay servicios)</label>
+                  <input type="number" style={S.input} value={data.monto||""} onChange={e => update({ monto: Number(e.target.value) })} />
                 </div>
-                <div style={{ padding: "20px", background: "rgba(232,51,74,0.06)" }}>
-                  <div style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0", marginBottom: 6 }}>Equivalente en pesos (TC: ${tcambio.toLocaleString()})</div>
-                  <div style={{ fontFamily: "system-ui", fontSize: 28, fontWeight: 700, color: "#e8334a" }}>${totalARS.toLocaleString("es-AR")} ARS</div>
+                <div>
+                  <label style={S.label}>Tipo de cambio (ARS por USD)</label>
+                  <input type="number" style={S.input} value={tcambio} onChange={e => { setTcambio(Number(e.target.value)); try { localStorage.setItem('atd_tcambio', e.target.value); } catch {} }} />
                 </div>
+              </div>
+
+              {/* LIQUIDACION AL CLIENTE */}
+              <div style={{ background: "linear-gradient(135deg,#1a2a5e,#111d3c)", border: "1px solid #e8334a", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: "system-ui", fontSize: 12, fontWeight: 700, color: "#e8334a", letterSpacing: "0.1em" }}>📋 LIQUIDACIÓN AL CLIENTE</span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0", marginRight: 6 }}>{data.cliente}</span>
+                    <button onClick={generateLiquidacionPDF} style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }}>📄 PDF</button>
+                    <button onClick={sendWhatsAppLiquidacion} style={{ ...S.btn("primary"), padding: "4px 10px", fontSize: 11 }}>📱 WhatsApp</button>
+                  </div>
+                </div>
+
+                {/* Fila servicios */}
+                {(data.servicios||[]).filter(s => s.moneda !== 'ARS').map(s => (
+                  <div key={s.id} style={{ padding: "8px 20px", borderBottom: "1px solid #0f1535", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#60a5fa", fontFamily: "system-ui" }}>{s.tipo}</span>
+                      <span style={{ fontSize: 12, color: "#c8d4f0", fontFamily: "system-ui" }}>{s.descripcion}</span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: s.precio > 0 ? "#ffffff" : "#4ade80", fontFamily: "system-ui" }}>
+                      {s.precio > 0 ? `$${Number(s.precio).toLocaleString()} USD` : "Incluido"}
+                    </span>
+                  </div>
+                ))}
+
+                {/* Total */}
+                <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(232,51,74,0.06)" }}>
+                  <span style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>TOTAL DEL VIAJE</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 900, color: "#e8334a" }}>${totalUSD.toLocaleString()} USD</div>
+                    {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>${totalARS.toLocaleString("es-AR")} ARS</div>}
+                  </div>
+                </div>
+
+                {/* Seña abonada */}
+                {totalCobradoUSD > 0 && (
+                  <div style={{ padding: "10px 20px", borderBottom: "1px solid #0f1535", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <span style={{ fontFamily: "system-ui", fontSize: 13, color: "#4ade80" }}>✓ Abonado</span>
+                      {fechaSeña && <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#4ade80", marginLeft: 10, fontWeight: 700 }}>· Seña: {fechaFmt(fechaSeña)}</span>}
+                      {!fechaSeña && <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0", marginLeft: 10 }}>Pago parcial</span>}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "system-ui", fontSize: 16, fontWeight: 700, color: "#4ade80" }}>-${totalCobradoUSD.toLocaleString()} USD</div>
+                      {totalCobradoARS > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>-${totalCobradoARS.toLocaleString("es-AR")} ARS</div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Saldo pendiente */}
+                <div style={{ padding: "14px 20px", background: saldoUSD <= 0 ? "rgba(74,222,128,0.06)" : "rgba(251,191,36,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontFamily: "system-ui", fontSize: 14, fontWeight: 700, color: saldoUSD <= 0 ? "#4ade80" : "#fbbf24" }}>
+                      {saldoUSD <= 0 ? "✅ PAGO COMPLETO" : "⏳ SALDO PENDIENTE"}
+                    </div>
+                    {saldoUSD > 0 && fechaSaldo && (
+                      <div style={{ fontFamily: "system-ui", fontSize: 12, marginTop: 4 }}>
+                        📅 Fecha límite: <strong style={{ color: colorFecha(fechaSaldo) }}>{fechaFmt(fechaSaldo)}</strong>
+                      </div>
+                    )}
+                  </div>
+                  {saldoUSD > 0 && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "system-ui", fontSize: 22, fontWeight: 900, color: "#fbbf24" }}>${saldoUSD.toLocaleString()} USD</div>
+                      {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>${(saldoUSD * tcambio).toLocaleString("es-AR")} ARS</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Total ARS equivalente */}
+              <div style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>Equivalente total en pesos (TC: ${tcambio.toLocaleString()})</span>
+                <span style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 700, color: "#e8334a" }}>${totalARS.toLocaleString("es-AR")} ARS</span>
               </div>
             </div>
-          )}
+          )})()}
 
           {/* TAB DOCUMENTACION */}
           {tab === "archivos" && (
             <div>
-              {/* DOCUMENTACION PARA PASAJERO */}
-              <div>
+              {/* VOUCHERS POR SERVICIO */}
+              <div style={{ marginBottom: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>📎 Documentos para el pasajero</div>
-                    <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginTop: 2 }}>Vouchers, itinerarios y confirmaciones que verá el pasajero en su portal</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>🎫 Vouchers por servicio</div>
+                    <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginTop: 2 }}>🔒 El pasajero accede solo cuando el pago está completo</div>
+                  </div>
+                </div>
+                {(data.servicios || []).length === 0 ? (
+                  <div style={{ background: "#111d3c", border: "2px dashed #1e2e6a", borderRadius: 12, padding: "20px", textAlign: "center", color: "#3a4a80", fontFamily: "system-ui", fontSize: 13 }}>
+                    No hay servicios cargados en esta venta
+                  </div>
+                ) : (data.servicios || []).map(s => (
+                  <div key={s.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "12px 16px", marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={S.badge("blue")}>{s.tipo}</span>
+                        <span style={{ fontSize: 13, color: "#ffffff", fontFamily: "system-ui", fontWeight: 600 }}>{s.descripcion}</span>
+                        {s.moneda === "ARS" && <span style={S.badge("yellow")}>ARS</span>}
+                      </div>
+                      <div style={{ background: "#0f1535", borderRadius: 6, padding: "4px 12px", textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#7080b0", fontFamily: "system-ui" }}>PRECIO VENTA</div>
+                        {s.precio > 0
+                          ? <div style={{ fontSize: 14, fontWeight: 700, color: "#e8334a" }}>${Number(s.precio).toLocaleString()} {s.moneda || "USD"}</div>
+                          : <div style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>Incluido en total</div>
+                        }
+                      </div>
+                    </div>
+                    <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10 }}>
+                      <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 6 }}>📎 Voucher para el pasajero</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {(s.vouchers || []).map((doc, di) => (
+                          <div key={di} style={{ display: "flex", alignItems: "center", gap: 4, background: "#0f1535", borderRadius: 6, padding: "4px 10px", border: "1px solid #1e2e6a" }}>
+                            <span style={{ fontSize: 12 }}>{doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? '🖼️' : '📄'}</span>
+                            <span style={{ fontSize: 11, color: "#c8d4f0", fontFamily: "system-ui", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
+                            <button onClick={() => {
+                              const w = window.open('', '_blank');
+                              if (doc.data.startsWith('data:image')) {
+                                w.document.write('<img src="' + doc.data + '" style="max-width:100%;"/>');
+                              } else {
+                                w.document.write('<iframe src="' + doc.data + '" width="100%" height="100%" style="border:none;position:fixed;top:0;left:0;width:100%;height:100%"></iframe>');
+                              }
+                              w.document.close();
+                            }} style={{ ...S.btn("ghost"), padding: "2px 6px", fontSize: 10 }}>👁</button>
+                            <a href={doc.data} download={doc.name} style={{ fontSize: 10, color: "#60a5fa" }}>⬇</a>
+                            <button onClick={() => {
+                              const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, vouchers: (x.vouchers||[]).filter((_,i) => i !== di)} : x);
+                              update({ servicios: updatedSvcs });
+                            }} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 11, padding: 0 }}>✕</button>
+                          </div>
+                        ))}
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 12px", borderRadius: 6, border: "1px dashed #1e2e6a", color: "#7080b0", fontFamily: "system-ui", fontSize: 11, cursor: "pointer" }}>
+                          + Subir voucher
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+                            onChange={e => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = ev => {
+                                const newDoc = { name: file.name, data: ev.target.result, uploadedAt: new Date().toLocaleDateString('es-AR') };
+                                const updatedSvcs = (data.servicios||[]).map(x => x.id === s.id ? {...x, vouchers: [...(x.vouchers||[]), newDoc]} : x);
+                                update({ servicios: updatedSvcs });
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }} />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* DOCUMENTOS GENERALES */}
+              <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui" }}>📎 Documentos generales</div>
+                    <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginTop: 2 }}>Itinerarios, contratos y confirmaciones generales</div>
                   </div>
                   <label style={{ ...S.btn("primary"), padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>
                     + Adjuntar archivo
@@ -41954,26 +43862,26 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
     try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { return []; }
   });
 
-  // Load from Supabase on mount + auto-assign ventaId
+  // Load on mount: localStorage is source of truth. Supabase only used as fallback when local is empty.
   useEffect(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      if (local.length > 0) {
+        // Local data exists — prefer it and fix any missing ventaIds
+        const fixed = local.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
+        setVentas(fixed);
+        localStorage.setItem(storageKey, JSON.stringify(fixed));
+        return; // do NOT overwrite with potentially stale Supabase data
+      }
+    } catch {}
+    // Local is empty — fall back to Supabase
     SB.loadBlob('ventas', storageKey).then(data => {
       if (data && Array.isArray(data) && data.length > 0) {
-        // Auto-assign ventaId to any without one
         const fixed = data.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
         setVentas(fixed);
         try { localStorage.setItem(storageKey, JSON.stringify(fixed)); } catch {}
-      } else {
-        // Also fix localStorage data
-        try {
-          const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
-          if (local.length > 0) {
-            const fixed = local.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
-            setVentas(fixed);
-            localStorage.setItem(storageKey, JSON.stringify(fixed));
-          }
-        } catch {}
       }
-    });
+    }).catch(() => {});
   }, [storageKey]);
   const [showModal, setShowModal] = useState(false);
   const [tipoNueva, setTipoNueva] = useState(null); // "directa" | "cotizacion"
@@ -42008,14 +43916,57 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
       }
     }
 
-    // Auto-add cliente as first pasajero
-    const titularPax = form.cliente ? [{
-      id: Date.now() + 10,
-      nombre: form.cliente,
-      tipoDoc: "DNI", dni: "", nacimiento: "", emision: "", expiracion: "",
-      mail: form.clienteEmail || "", telefono: form.clientePhone || "",
-      visaUSA: false, docAdj: null
-    }] : [];
+    // Auto-add cliente as first pasajero — busca datos completos en atd_passengers
+    let titularPax = [];
+    if (form.cliente) {
+      try {
+        const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const match = allPax.find(p =>
+          (p.name || '').toLowerCase() === form.cliente.toLowerCase() ||
+          (form.clienteEmail && (p.email || '').toLowerCase() === form.clienteEmail.toLowerCase()) ||
+          (form.clientId && String(p.id) === String(form.clientId))
+        );
+        if (match) {
+          // Pasajero existente: copiar todos sus datos al formato de venta
+          titularPax = [{
+            id: Date.now() + 10,
+            nombre: match.name || form.cliente,
+            tipoDoc: match.tipoDoc || 'DNI',
+            dni: match.dni || '',
+            nacimiento: match.birthdate || match.nacimiento || '',
+            emision: match.docEmision || match.emision || '',
+            expiracion: match.docExpiracion || match.expiracion || '',
+            mail: match.email || form.clienteEmail || '',
+            telefono: match.phone || form.clientePhone || '',
+            visaUSA: match.visaUSA || false,
+            visaNumero: match.visaNumero || '',
+            visaTipo: match.visaTipo || '',
+            visaEmision: match.visaEmision || '',
+            visaExpiracion: match.visaExpiracion || '',
+            visaEntradas: match.visaEntradas || '',
+            docAdj: null,
+            paxId: match.id, // referencia al ID global
+          }];
+        } else {
+          // Pasajero nuevo: datos básicos del formulario
+          titularPax = [{
+            id: Date.now() + 10,
+            nombre: form.cliente,
+            tipoDoc: 'DNI', dni: '', nacimiento: '', emision: '', expiracion: '',
+            mail: form.clienteEmail || '', telefono: form.clientePhone || '',
+            visaUSA: false, docAdj: null,
+          }];
+        }
+      } catch {
+        titularPax = [{
+          id: Date.now() + 10,
+          nombre: form.cliente,
+          tipoDoc: 'DNI', dni: '', nacimiento: '', emision: '', expiracion: '',
+          mail: form.clienteEmail || '', telefono: form.clientePhone || '',
+          visaUSA: false, docAdj: null,
+        }];
+      }
+    }
 
     save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: titularPax, servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
     setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "", clienteEmail: "", clientePhone: "", showNewPax: false });
@@ -42361,16 +44312,7 @@ export default function App() {
     setSyncing(true);
     setSyncMsg("Subiendo datos...");
     try {
-      const keys = [
-        ['atd_quotes', quotes],
-        ['atd_payments', payments],
-        ['atd_destinations', null],
-        ['atd_providers', null],
-        ['atd_services', null],
-        ['atd_caja', null],
-        ['atd_gastos_fijos', null],
-      ];
-      // Also grab ventas from localStorage
+      // Ventas por mes
       const meses = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
       for (const mes of meses) {
         const key = `ventas_2026_${mes}`;
@@ -42379,17 +44321,27 @@ export default function App() {
           if (data.length > 0) await SB.saveBlob('ventas', key, data);
         } catch {}
       }
-      // Sync main collections
+      // Colecciones principales
       await SB.saveBlob('ventas', 'atd_quotes', quotes);
       await SB.saveBlob('ventas', 'atd_payments', payments);
       try { const d = JSON.parse(localStorage.getItem('atd_destinations') || "[]"); await SB.saveBlob('ventas', 'atd_destinations', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_providers') || "[]"); await SB.saveBlob('ventas', 'atd_providers', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_services') || "{}"); await SB.saveBlob('ventas', 'atd_services', d); } catch {}
-      // Sync only passengers with active ventas for portal
+      try { const d = JSON.parse(localStorage.getItem('atd_caja') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_caja', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_gastos_fijos') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_gastos_fijos', d); } catch {}
+      // Pasajeros completos
+      try { const d = JSON.parse(localStorage.getItem('atd_passengers') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_passengers', d); } catch {}
+      // Ciudades y aerolíneas personalizadas
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_cities') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_cities', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_airlines') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_airlines', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_destinations') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_destinations', d); } catch {}
+      // Alertas done
+      try { const d = JSON.parse(localStorage.getItem('atd_alertas_done') || "[]"); await SB.saveBlob('ventas', 'atd_alertas_done', d); } catch {}
+      // Subset de pasajeros para Portal del Pasajero
       try {
         const ventaEmails = new Set();
         const ventaNames = new Set();
-        ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"].forEach(m => {
+        meses.forEach(m => {
           try {
             const vs = JSON.parse(localStorage.getItem("ventas_2026_" + m) || "[]");
             vs.forEach(v => {
@@ -42403,9 +44355,7 @@ export default function App() {
           (p.email && ventaEmails.has(p.email.toLowerCase())) ||
           (p.name && ventaNames.has(p.name.toLowerCase()))
         );
-        if (paxPortal.length > 0) {
-          await SB.saveBlob('ventas', 'atd_passengers_portal', paxPortal);
-        }
+        if (paxPortal.length > 0) await SB.saveBlob('ventas', 'atd_passengers_portal', paxPortal);
       } catch(e) { console.error("pax portal sync error:", e); }
 
       setSyncMsg("✓ Sincronizado");
@@ -42421,15 +44371,38 @@ export default function App() {
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
+        // Quotes
         const qData = await SB.loadBlob('ventas', 'atd_quotes');
-        if (qData && Array.isArray(qData) && qData.length > 0) {
-          setQuotes(qData);
-          localStorage.setItem('atd_quotes', JSON.stringify(qData));
-        }
+        if (qData && Array.isArray(qData) && qData.length > 0) { setQuotes(qData); localStorage.setItem('atd_quotes', JSON.stringify(qData)); }
+        // Payments
         const pData = await SB.loadBlob('ventas', 'atd_payments');
-        if (pData && Array.isArray(pData) && pData.length > 0) {
-          setPayments(pData);
-          localStorage.setItem('atd_payments', JSON.stringify(pData));
+        if (pData && Array.isArray(pData) && pData.length > 0) { setPayments(pData); localStorage.setItem('atd_payments', JSON.stringify(pData)); }
+        // Providers
+        const provData = await SB.loadBlob('ventas', 'atd_providers');
+        if (provData && Array.isArray(provData) && provData.length > 0) localStorage.setItem('atd_providers', JSON.stringify(provData));
+        // Destinations
+        const destData = await SB.loadBlob('ventas', 'atd_destinations');
+        if (destData && Array.isArray(destData) && destData.length > 0) localStorage.setItem('atd_destinations', JSON.stringify(destData));
+        // Passengers
+        const paxData = await SB.loadBlob('ventas', 'atd_passengers');
+        if (paxData && Array.isArray(paxData) && paxData.length > 0) { setPassengers(paxData); localStorage.setItem('atd_passengers', JSON.stringify(paxData)); }
+        // Custom cities & airlines
+        const citData = await SB.loadBlob('ventas', 'atd_custom_cities');
+        if (citData && Array.isArray(citData) && citData.length > 0) localStorage.setItem('atd_custom_cities', JSON.stringify(citData));
+        const airData = await SB.loadBlob('ventas', 'atd_custom_airlines');
+        if (airData && Array.isArray(airData) && airData.length > 0) localStorage.setItem('atd_custom_airlines', JSON.stringify(airData));
+        const custDestData = await SB.loadBlob('ventas', 'atd_custom_destinations');
+        if (custDestData && Array.isArray(custDestData) && custDestData.length > 0) localStorage.setItem('atd_custom_destinations', JSON.stringify(custDestData));
+        // Alertas done
+        const doneData = await SB.loadBlob('ventas', 'atd_alertas_done');
+        if (doneData && Array.isArray(doneData) && doneData.length > 0) localStorage.setItem('atd_alertas_done', JSON.stringify(doneData));
+        // Ventas por mes
+        const meses = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        for (const mes of meses) {
+          try {
+            const vData = await SB.loadBlob('ventas', `ventas_2026_${mes}`);
+            if (vData && Array.isArray(vData) && vData.length > 0) localStorage.setItem(`ventas_2026_${mes}`, JSON.stringify(vData));
+          } catch {}
         }
       } catch(e) { console.error("Supabase load error:", e); }
       setSbReady(true);
@@ -42513,7 +44486,7 @@ export default function App() {
           </div>
         </div>
         <div style={S.content}>
-          {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} />}
+          {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} setView={setView} />}
           {view === "services" && <ServicesModule />}
           {view === "providers" && <ProvidersModule />}
           {view === "quotes" && <QuotesModule quotes={quotes} setQuotes={setQuotes} passengers={passengers} setPassengers={setPassengers} />}
