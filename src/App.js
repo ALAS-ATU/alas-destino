@@ -43751,6 +43751,47 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                   </div>
                 ))}
 
+                {/* CALENDARIO DE PAGOS — todas las fechas de seña y saldo del cliente */}
+                {(() => {
+                  const señas = (data.servicios||[]).filter(s => s.fechaSeñaCliente).map(s => ({ fecha: s.fechaSeñaCliente, monto: s.precioSeña || null, desc: s.descripcion || s.tipo }));
+                  const saldos = (data.servicios||[]).filter(s => s.fechaSaldoCliente).map(s => ({ fecha: s.fechaSaldoCliente, monto: s.precioSaldo || null, desc: s.descripcion || s.tipo }));
+                  // Deduplicar por fecha
+                  const señasUnicas = señas.filter((s, i, arr) => arr.findIndex(x => x.fecha === s.fecha) === i);
+                  const saldosUnicos = saldos.filter((s, i, arr) => arr.findIndex(x => x.fecha === s.fecha) === i);
+                  if (señasUnicas.length === 0 && saldosUnicos.length === 0) return null;
+                  return (
+                    <div style={{ borderTop: "1px solid #1e2e6a", borderBottom: "1px solid #1e2e6a", background: "rgba(96,165,250,0.05)", padding: "10px 20px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", letterSpacing: "0.08em", marginBottom: 8 }}>📅 CALENDARIO DE PAGOS</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {señasUnicas.map((s, i) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 13 }}>⚡</span>
+                              <div>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", fontFamily: "system-ui" }}>Seña cliente</span>
+                                {señasUnicas.length > 1 && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "system-ui", color: colorFecha(s.fecha) }}>{fechaFmt(s.fecha)}</span>
+                          </div>
+                        ))}
+                        {saldosUnicos.map((s, i) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 13 }}>💰</span>
+                              <div>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", fontFamily: "system-ui" }}>Pago total</span>
+                                {saldosUnicos.length > 1 && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "system-ui", color: colorFecha(s.fecha) }}>{fechaFmt(s.fecha)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Total */}
                 <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(232,51,74,0.06)" }}>
                   <span style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>TOTAL DEL VIAJE</span>
