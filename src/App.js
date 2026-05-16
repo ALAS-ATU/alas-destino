@@ -40437,26 +40437,89 @@ function DestinationSearch({ value, onChange, placeholder }) {
   const [suggestions, setSuggestions] = useState([]);
   const [show, setShow] = useState(false);
 
+  // Normaliza texto quitando tildes para búsqueda flexible
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  const buscar = (val) => {
+    if (val.length < 2) { setSuggestions([]); setShow(false); return; }
+    const q = norm(val);
+    const resultados = [];
+    const vistos = new Set();
+
+    // 1. Buscar en DESTINATIONS_DB (ALL_CITIES) sin tildes
+    ALL_CITIES.forEach(d => {
+      if (norm(d.city).includes(q) || norm(d.country).includes(q)) {
+        const key = d.city + '|' + d.country;
+        if (!vistos.has(key)) { vistos.add(key); resultados.push({ city: d.city, country: d.country, continent: d.continent, tipo: 'db' }); }
+      }
+    });
+
+    // 2. Buscar en IATA_MAP — muestra la ciudad sin código IATA
+    Object.entries(IATA_MAP).forEach(([code, nombre]) => {
+      if (norm(code).includes(q) || norm(nombre).includes(q)) {
+        // Extraer nombre limpio (sin paréntesis del código de aeropuerto)
+        const cityName = nombre.replace(/\s*\(.*?\)/g, '').trim();
+        const key = cityName + '|IATA';
+        if (!vistos.has(key)) {
+          vistos.add(key);
+          resultados.push({ city: cityName, country: code, continent: 'IATA', tipo: 'iata', iataCode: code, iataNombre: nombre });
+        }
+      }
+    });
+
+    // 3. Buscar en destinos personalizados guardados
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_destinations') || '[]');
+      custom.forEach(d => {
+        if (norm(d.city).includes(q) || norm(d.country || '').includes(q)) {
+          const key = d.city + '|custom';
+          if (!vistos.has(key)) { vistos.add(key); resultados.push({ ...d, tipo: 'custom' }); }
+        }
+      });
+    } catch {}
+
+    setSuggestions(resultados.slice(0, 12));
+    setShow(true);
+  };
+
   const handleChange = (val) => {
     setQuery(val);
     onChange(val);
-    if (val.length < 2) { setSuggestions([]); setShow(false); return; }
-    const q = val.toLowerCase();
-    const filtered = ALL_CITIES.filter(d =>
-      d.city.toLowerCase().includes(q) ||
-      d.country.toLowerCase().includes(q)
-    ).slice(0, 10);
-    setSuggestions(filtered);
-    setShow(filtered.length > 0);
+    buscar(val);
   };
 
   const handleSelect = (d) => {
-    const full = d.city + ", " + d.country;
+    let full;
+    if (d.tipo === 'iata') {
+      full = d.city; // Solo el nombre, sin código IATA
+    } else if (d.tipo === 'custom') {
+      full = d.city + (d.country ? ', ' + d.country : '');
+    } else {
+      full = d.city + ', ' + d.country;
+    }
     setQuery(full);
     onChange(full);
     setSuggestions([]);
     setShow(false);
   };
+
+  const agregarDestino = () => {
+    const nombre = query.trim();
+    if (!nombre) return;
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_destinations') || '[]');
+      if (!custom.find(d => norm(d.city) === norm(nombre))) {
+        custom.push({ city: nombre, country: '', continent: 'Personalizado' });
+        localStorage.setItem('atd_custom_destinations', JSON.stringify(custom));
+      }
+    } catch {}
+    onChange(nombre);
+    setSuggestions([]);
+    setShow(false);
+  };
+
+  const hayResultados = suggestions.length > 0;
+  const mostrarAgregar = query.trim().length >= 2;
 
   return (
     <div style={{ position: "relative" }}>
@@ -40465,11 +40528,11 @@ function DestinationSearch({ value, onChange, placeholder }) {
         value={query}
         placeholder={placeholder || "Escribí ciudad o país..."}
         onChange={e => handleChange(e.target.value)}
-        onBlur={() => setTimeout(() => setShow(false), 150)}
-        onFocus={() => query.length >= 2 && suggestions.length > 0 && setShow(true)}
+        onBlur={() => setTimeout(() => setShow(false), 200)}
+        onFocus={() => query.length >= 2 && setShow(true)}
       />
-      {show && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 8, zIndex: 999, maxHeight: 280, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+      {show && (hayResultados || mostrarAgregar) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 8, zIndex: 999, maxHeight: 300, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           {suggestions.map((d, i) => (
             <div key={i} onMouseDown={() => handleSelect(d)}
               style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}
@@ -40477,11 +40540,24 @@ function DestinationSearch({ value, onChange, placeholder }) {
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", fontFamily: "system-ui" }}>{d.city}</div>
-                <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{d.country} · {d.continent}</div>
+                <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>
+                  {d.tipo === 'iata' ? `✈ ${d.iataNombre} · ${d.iataCode}` : d.tipo === 'custom' ? `★ Personalizado` : `${d.country} · ${d.continent}`}
+                </div>
               </div>
-              <span style={{ fontSize: 10, color: "#3a4a80", fontFamily: "system-ui" }}>{d.continent}</span>
+              <span style={{ fontSize: 10, background: d.tipo === 'iata' ? '#1e3a5f' : d.tipo === 'custom' ? '#3a2a00' : '#1a2550', color: d.tipo === 'iata' ? '#60a5fa' : d.tipo === 'custom' ? '#fbbf24' : '#3a4a80', borderRadius: 4, padding: '2px 6px', fontFamily: "system-ui" }}>
+                {d.tipo === 'iata' ? 'IATA' : d.tipo === 'custom' ? '★' : d.continent}
+              </span>
             </div>
           ))}
+          {mostrarAgregar && (
+            <div onMouseDown={agregarDestino}
+              style={{ padding: "10px 14px", cursor: "pointer", borderTop: hayResultados ? "1px solid #2a3a6a" : "none", display: "flex", alignItems: "center", gap: 8, color: "#4ade80" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#0a1a0a"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>✚</span>
+              <span style={{ fontSize: 13, fontFamily: "system-ui" }}>Agregar <strong>"{query.trim()}"</strong> como destino</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -44179,6 +44255,7 @@ export default function App() {
       // Ciudades y aerolíneas personalizadas
       try { const d = JSON.parse(localStorage.getItem('atd_custom_cities') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_cities', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_custom_airlines') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_airlines', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_destinations') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_destinations', d); } catch {}
       // Alertas done
       try { const d = JSON.parse(localStorage.getItem('atd_alertas_done') || "[]"); await SB.saveBlob('ventas', 'atd_alertas_done', d); } catch {}
       // Subset de pasajeros para Portal del Pasajero
@@ -44235,6 +44312,8 @@ export default function App() {
         if (citData && Array.isArray(citData) && citData.length > 0) localStorage.setItem('atd_custom_cities', JSON.stringify(citData));
         const airData = await SB.loadBlob('ventas', 'atd_custom_airlines');
         if (airData && Array.isArray(airData) && airData.length > 0) localStorage.setItem('atd_custom_airlines', JSON.stringify(airData));
+        const custDestData = await SB.loadBlob('ventas', 'atd_custom_destinations');
+        if (custDestData && Array.isArray(custDestData) && custDestData.length > 0) localStorage.setItem('atd_custom_destinations', JSON.stringify(custDestData));
         // Alertas done
         const doneData = await SB.loadBlob('ventas', 'atd_alertas_done');
         if (doneData && Array.isArray(doneData) && doneData.length > 0) localStorage.setItem('atd_alertas_done', JSON.stringify(doneData));
