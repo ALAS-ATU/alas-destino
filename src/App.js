@@ -42642,12 +42642,29 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
     <div style="font-size:13px;color:#7080b0;margin-bottom:20px">${data.destino||''} · ${data.fecha||''}</div>
     ${svcsUSD.map(s=>`
       <div class="svc-row">
-        <div><span class="svc-tipo">${s.tipo}</span><span class="svc-desc">${s.descripcion}</span></div>
-        <span class="svc-precio">${s.precio>0?'$'+Number(s.precio).toLocaleString()+' USD':'Incluido'}</span>
+        <div>
+          <span class="svc-tipo">${s.tipo}</span><span class="svc-desc">${s.descripcion}</span>
+          ${(s.fechaSeñaCliente||s.fechaSaldoCliente)?`<div style="font-size:11px;color:#7080b0;margin-top:2px">${s.fechaSeñaCliente?`⚡ Seña: ${fechaFmt(s.fechaSeñaCliente)}`:''}${s.fechaSeñaCliente&&s.fechaSaldoCliente?' · ':''}${s.fechaSaldoCliente?`💰 Saldo: ${fechaFmt(s.fechaSaldoCliente)}`:''}</div>`:''}
+        </div>
+        <span class="svc-precio">${s.precio>0?Number(s.precio).toLocaleString()+' USD':'Incluido'}</span>
       </div>`).join('')}
+    ${(() => {
+      const señas = svcsUSD.filter(s=>s.fechaSeñaCliente).map(s=>({ fecha: fechaFmt(s.fechaSeñaCliente), desc: s.descripcion||s.tipo }));
+      const saldos = svcsUSD.filter(s=>s.fechaSaldoCliente).map(s=>({ fecha: fechaFmt(s.fechaSaldoCliente), desc: s.descripcion||s.tipo }));
+      if (señas.length===0 && saldos.length===0) return '';
+      return `<div style="background:#f0f4ff;border-radius:8px;padding:12px 16px;margin:12px 0;border-left:4px solid #1a2580">
+        <div style="font-size:11px;font-weight:700;color:#1a2580;letter-spacing:0.08em;margin-bottom:8px">📅 CALENDARIO DE PAGOS</div>
+        ${señas.map(s=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+          <span>⚡ <strong>Seña cliente</strong> <span style="color:#7080b0">${s.desc}</span></span>
+          <strong style="color:#92400e">${s.fecha}</strong></div>`).join('')}
+        ${saldos.map(s=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+          <span>💰 <strong>Pago total</strong> <span style="color:#7080b0">${s.desc}</span></span>
+          <strong style="color:#166534">${s.fecha}</strong></div>`).join('')}
+      </div>`;
+    })()}
     <div class="total-row">
       <span class="total-label">TOTAL DEL VIAJE</span>
-      <span class="total-value">$${totalUSD.toLocaleString()} USD</span>
+      <span class="total-value">${totalUSD.toLocaleString()} USD</span>
     </div>
     ${totalCobradoUSD>0?`
     <div class="abonado">
@@ -43769,7 +43786,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               <span style={{ fontSize: 13 }}>⚡</span>
                               <div>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", fontFamily: "system-ui" }}>Seña cliente</span>
-                                {señasUnicas.length > 1 && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>}
+                                <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>
                               </div>
                             </div>
                             <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "system-ui", color: colorFecha(s.fecha) }}>{fechaFmt(s.fecha)}</span>
@@ -43781,7 +43798,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               <span style={{ fontSize: 13 }}>💰</span>
                               <div>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", fontFamily: "system-ui" }}>Pago total</span>
-                                {saldosUnicos.length > 1 && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>}
+                                <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginLeft: 6 }}>{s.desc}</span>
                               </div>
                             </div>
                             <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "system-ui", color: colorFecha(s.fecha) }}>{fechaFmt(s.fecha)}</span>
