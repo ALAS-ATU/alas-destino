@@ -38710,6 +38710,54 @@ function Dashboard({ quotes, payments, passengers, setView }) {
     });
   } catch {}
 
+  // === ALERTAS DE SEGUIMIENTO DE COTIZACIONES ===
+  const ahoraMs = Date.now();
+  quotes.filter(q => !q.convertida && q.status !== "Cancelada" && q.status !== "Confirmada").forEach(q => {
+    const createdStr = q.created || q.date || '';
+    if (!createdStr) return;
+    try {
+      const createdMs = new Date(createdStr).getTime();
+      if (isNaN(createdMs)) return;
+      const diffHs = (ahoraMs - createdMs) / 3600000;
+      const cotId = `ATD-${String(q.id).padStart(3,'0')}`;
+      const cliente = q.client || q.cliente || '';
+      const destino = q.destination || q.destino || '';
+      if (diffHs >= 96) {
+        // Más de 96hs → sugerir descartar
+        alertas.push({
+          cliente,
+          ventaId: cotId,
+          servicio: destino,
+          tipo: '⚠️ Cotización sin respuesta',
+          color: '#f87171',
+          bg: 'rgba(248,113,113,0.10)',
+          fecha: createdStr,
+          diffDias: 0,
+          esCotizacion: true,
+          cotizacionId: q.id,
+          cotizacionHs: Math.round(diffHs),
+          cotizacionEtapa: 'descartar',
+        });
+      } else if (diffHs >= 48) {
+        // Entre 48 y 96hs → seguimiento
+        alertas.push({
+          cliente,
+          ventaId: cotId,
+          servicio: destino,
+          tipo: '🔔 Seguimiento cotización',
+          color: '#fbbf24',
+          bg: 'rgba(251,191,36,0.10)',
+          fecha: createdStr,
+          diffDias: 0,
+          esCotizacion: true,
+          cotizacionId: q.id,
+          cotizacionHs: Math.round(diffHs),
+          cotizacionEtapa: 'seguimiento',
+        });
+      }
+    } catch {}
+  });
+
   // Deduplicar: mismo pasajero + mismo tipo de alerta → quedarse con uno solo
   const alertasUnicas = [];
   const vistos = new Set();
@@ -38858,7 +38906,9 @@ function Dashboard({ quotes, payments, passengers, setView }) {
           <div style={{ padding: '8px 0' }}>
             {alertasVisibles.map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: a.bg, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>{labelDia(a.diffDias)}</div>
+                <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.esCotizacion ? a.color : a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>
+                  {a.esCotizacion ? (a.cotizacionEtapa === 'descartar' ? '🔴 +96hs' : '🟡 +48hs') : labelDia(a.diffDias)}
+                </div>
                 <div style={{ minWidth: 120, fontSize: 12, color: a.color, fontWeight: 600 }}>{a.tipo}</div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>{a.cliente}</span>
@@ -38876,6 +38926,28 @@ function Dashboard({ quotes, payments, passengers, setView }) {
                       style={{ background: '#25d366', border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
                       💬 WA
                     </button>
+                  </div>
+                )}
+                {a.esCotizacion && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontFamily: 'system-ui', color: a.cotizacionEtapa === 'descartar' ? '#f87171' : '#fbbf24', background: a.cotizacionEtapa === 'descartar' ? 'rgba(248,113,113,0.12)' : 'rgba(251,191,36,0.12)', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                      {a.cotizacionHs}hs sin respuesta
+                    </span>
+                    {a.cotizacionEtapa === 'descartar' && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`¿Marcar cotización ${a.ventaId} como descartada?\nQuedará en estadísticas de conversión.`)) {
+                            const upd = quotes.map(q => q.id === a.cotizacionId ? { ...q, status: 'Cancelada', descartada: true } : q);
+                            // setQuotes no está disponible aquí, usamos postMessage o navegamos
+                            localStorage.setItem('atd_quotes', JSON.stringify(upd));
+                            marcarAlertaDone(a);
+                          }
+                        }}
+                        title="Descartar cotización (queda en estadísticas)"
+                        style={{ background: 'rgba(248,113,113,0.15)', border: '1.5px solid #f87171', borderRadius: 8, padding: '4px 8px', cursor: 'pointer', color: '#f87171', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Descartar
+                      </button>
+                    )}
                   </div>
                 )}
                 <button
