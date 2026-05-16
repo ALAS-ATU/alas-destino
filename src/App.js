@@ -38582,10 +38582,14 @@ function Dashboard({ quotes, payments, passengers, setView }) {
   // Ventas del mes actual
   const ventasMesActual = todasLasVentas.filter(v => v._mes === mesActual);
 
-  // INGRESOS DEL MES: suma cobros de ventas del mes actual
+  // INGRESOS DEL MES: suma cobros de ventas del mes actual (USD y ARS)
   const ingresosMes = ventasMesActual.reduce((acc, v) => {
     const cobrosUSD = (v.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
     return acc + cobrosUSD;
+  }, 0);
+  const ingresosMesARS = ventasMesActual.reduce((acc, v) => {
+    const cobrosARS = (v.cobros || []).filter(c => c.moneda === 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
+    return acc + cobrosARS;
   }, 0);
 
   // COTIZACIONES ACTIVAS: no convertidas y no canceladas
@@ -38603,7 +38607,7 @@ function Dashboard({ quotes, payments, passengers, setView }) {
   const pasajerosActivos = todasLasVentas.filter(v => v.estado === "Confirmada").reduce((acc, v) => acc + ((v.pasajeros || []).length || 1), 0);
 
   const stats = [
-    { label: "Ingresos del Mes", value: `${ingresosMes.toLocaleString()} USD`, icon: "💰", sub: `${mesActual.charAt(0).toUpperCase() + mesActual.slice(1)} ${añoActual}` },
+    { label: "Ingresos del Mes", value: `${ingresosMes.toLocaleString()} USD`, icon: "💰", sub: `${ingresosMesARS > 0 ? ingresosMesARS.toLocaleString('es-AR') + ' ARS · ' : ''}${mesActual.charAt(0).toUpperCase() + mesActual.slice(1)} ${añoActual}` },
     { label: "Cotizaciones Activas", value: String(cotizacionesActivas), icon: "📋", sub: `${tasaConversion}% conversión` },
     { label: "Pasajeros Activos", value: String(pasajerosActivos), icon: "👥", sub: "En ventas confirmadas" },
     { label: "Viajes Confirmados", value: String(viajesConfirmados), icon: "✈️", sub: `${todasLasVentas.length} ventas totales` },
@@ -41575,21 +41579,26 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
   const reporteAnual = MESES.map(m => {
     const ventas = getVentasMes(m);
     const confirmadas = ventas.filter(v => v.estado === "Confirmada");
-    const ingresos = confirmadas.reduce((acc, v) => {
-      return acc + (v.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
-    }, 0);
+    const ingresosUSD = confirmadas.reduce((acc, v) =>
+      acc + (v.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0), 0);
+    const ingresosARS = confirmadas.reduce((acc, v) =>
+      acc + (v.cobros || []).filter(c => c.moneda === 'ARS').reduce((a, c) => a + (c.monto || 0), 0), 0);
     const totalUSD = confirmadas.reduce((acc, v) => {
       const svcSum = (v.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (Number(s.precio) || 0), 0);
       return acc + (svcSum || v.monto || 0);
     }, 0);
+    const totalARS = confirmadas.reduce((acc, v) =>
+      acc + (v.servicios || []).filter(s => s.moneda === 'ARS').reduce((a, s) => a + (Number(s.precio) || 0), 0), 0);
     const pasajeros = confirmadas.reduce((acc, v) => acc + ((v.pasajeros || []).length || 1), 0);
-    return { mes: m, ventas: confirmadas.length, totalUSD, ingresos, pasajeros };
+    return { mes: m, ventas: confirmadas.length, totalUSD, totalARS, ingresosUSD, ingresosARS, pasajeros };
   });
 
-  const acumIngresos = reporteAnual.reduce((acc, r) => acc + r.ingresos, 0);
+  const acumIngresosUSD = reporteAnual.reduce((acc, r) => acc + r.ingresosUSD, 0);
+  const acumIngresosARS = reporteAnual.reduce((acc, r) => acc + r.ingresosARS, 0);
   const acumVentas = reporteAnual.reduce((acc, r) => acc + r.ventas, 0);
   const acumPasajeros = reporteAnual.reduce((acc, r) => acc + r.pasajeros, 0);
   const acumTotal = reporteAnual.reduce((acc, r) => acc + r.totalUSD, 0);
+  const acumTotalARS = reporteAnual.reduce((acc, r) => acc + r.totalARS, 0);
 
   return (
     <div>
@@ -41601,32 +41610,40 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "system-ui", fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #1e2e6a" }}>
-                {["Mes","Ventas","Total viajes USD","Cobrado USD","Pasajeros"].map(h => (
-                  <th key={h} style={{ padding: "8px 12px", textAlign: h === "Mes" ? "left" : "right", color: "#7080b0", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em" }}>{h}</th>
-                ))}
+              <tr style={{ borderBottom: "2px solid #1e2e6a" }}>
+                <th style={{ padding: "8px 10px", textAlign: "left", color: "#7080b0", fontWeight: 700, fontSize: 11 }}>Mes</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#7080b0", fontWeight: 700, fontSize: 11 }}>Ventas</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#e8334a", fontWeight: 700, fontSize: 11 }}>Total USD</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#4ade80", fontWeight: 700, fontSize: 11 }}>Cobrado USD</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#fbbf24", fontWeight: 700, fontSize: 11 }}>Total ARS</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#86efac", fontWeight: 700, fontSize: 11 }}>Cobrado ARS</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", color: "#fbbf24", fontWeight: 700, fontSize: 11 }}>Pasajeros</th>
               </tr>
             </thead>
             <tbody>
               {reporteAnual.map((r, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid rgba(30,46,106,0.5)", background: r.mes === mesReporte ? "rgba(232,51,74,0.06)" : "transparent" }}>
-                  <td style={{ padding: "8px 12px", color: r.ventas > 0 ? "#ffffff" : "#3a4a80", fontWeight: r.ventas > 0 ? 600 : 400 }}>
+                  <td style={{ padding: "8px 10px", color: r.ventas > 0 ? "#ffffff" : "#3a4a80", fontWeight: r.ventas > 0 ? 600 : 400 }}>
                     {r.mes.charAt(0).toUpperCase() + r.mes.slice(1)}
                   </td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.ventas > 0 ? "#60a5fa" : "#3a4a80" }}>{r.ventas}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.totalUSD > 0 ? "#e8334a" : "#3a4a80", fontWeight: 600 }}>{r.totalUSD > 0 ? r.totalUSD.toLocaleString() + " USD" : "—"}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.ingresos > 0 ? "#4ade80" : "#3a4a80", fontWeight: 600 }}>{r.ingresos > 0 ? r.ingresos.toLocaleString() + " USD" : "—"}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.pasajeros > 0 ? "#fbbf24" : "#3a4a80" }}>{r.pasajeros || "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.ventas > 0 ? "#60a5fa" : "#3a4a80" }}>{r.ventas || "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.totalUSD > 0 ? "#e8334a" : "#3a4a80", fontWeight: 600 }}>{r.totalUSD > 0 ? r.totalUSD.toLocaleString() + " USD" : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.ingresosUSD > 0 ? "#4ade80" : "#3a4a80", fontWeight: 600 }}>{r.ingresosUSD > 0 ? r.ingresosUSD.toLocaleString() + " USD" : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.totalARS > 0 ? "#fbbf24" : "#3a4a80", fontWeight: 600 }}>{r.totalARS > 0 ? r.totalARS.toLocaleString("es-AR") + " ARS" : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.ingresosARS > 0 ? "#86efac" : "#3a4a80", fontWeight: 600 }}>{r.ingresosARS > 0 ? r.ingresosARS.toLocaleString("es-AR") + " ARS" : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: r.pasajeros > 0 ? "#fbbf24" : "#3a4a80" }}>{r.pasajeros || "—"}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: "2px solid #e8334a", background: "rgba(232,51,74,0.08)" }}>
-                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#e8334a", fontFamily: "system-ui" }}>ACUMULADO</td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#60a5fa" }}>{acumVentas}</td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#e8334a" }}>{acumTotal.toLocaleString()} USD</td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#4ade80" }}>{acumIngresos.toLocaleString()} USD</td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#fbbf24" }}>{acumPasajeros}</td>
+                <td style={{ padding: "10px 10px", fontWeight: 700, color: "#e8334a" }}>ACUMULADO</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#60a5fa" }}>{acumVentas}</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#e8334a" }}>{acumTotal.toLocaleString()} USD</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#4ade80" }}>{acumIngresosUSD.toLocaleString()} USD</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#fbbf24" }}>{acumTotalARS.toLocaleString("es-AR")} ARS</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#86efac" }}>{acumIngresosARS.toLocaleString("es-AR")} ARS</td>
+                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 700, color: "#fbbf24" }}>{acumPasajeros}</td>
               </tr>
             </tfoot>
           </table>
@@ -43951,11 +43968,54 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 </div>
               </div>
 
-              {/* Total ARS equivalente */}
-              <div style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>Equivalente total en pesos (TC: {tcambio.toLocaleString()} ARS)</span>
-                <span style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 700, color: "#e8334a" }}>{totalARS.toLocaleString("es-AR")} ARS</span>
-              </div>
+              {/* SECCIÓN ARS — servicios en pesos */}
+              {(() => {
+                const svcsARS = (data.servicios||[]).filter(s => s.moneda === 'ARS');
+                const totalSvcsARS = svcsARS.reduce((a, s) => a + (Number(s.precio) || 0), 0);
+                const cobradoARS = (data.cobros||[]).filter(c => c.moneda === 'ARS').reduce((a,c) => a+(c.monto||0), 0);
+                const saldoARSLocal = totalSvcsARS - cobradoARS;
+                if (svcsARS.length === 0 && cobradoARS === 0) return null;
+                return (
+                  <div style={{ background: "linear-gradient(135deg,#1a2a3e,#111d2c)", border: "1px solid #fbbf24", borderRadius: 12, overflow: "hidden", marginTop: 12 }}>
+                    <div style={{ padding: "10px 20px", borderBottom: "1px solid #2a2a00", background: "rgba(251,191,36,0.06)" }}>
+                      <span style={{ fontFamily: "system-ui", fontSize: 12, fontWeight: 700, color: "#fbbf24", letterSpacing: "0.1em" }}>🪙 SERVICIOS EN PESOS (ARS)</span>
+                    </div>
+                    {svcsARS.map(s => (
+                      <div key={s.id} style={{ padding: "8px 20px", borderBottom: "1px solid #0f1520", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <span style={{ fontSize: 11, color: "#fbbf24", fontFamily: "system-ui" }}>{s.tipo}</span>
+                          <span style={{ fontSize: 12, color: "#c8d4f0", fontFamily: "system-ui", marginLeft: 8 }}>{s.descripcion}</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#fbbf24", fontFamily: "system-ui" }}>{Number(s.precio).toLocaleString("es-AR")} ARS</span>
+                      </div>
+                    ))}
+                    <div style={{ padding: "10px 20px", borderBottom: "1px solid #2a2a00", display: "flex", justifyContent: "space-between", background: "rgba(251,191,36,0.04)" }}>
+                      <span style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>TOTAL ARS</span>
+                      <span style={{ fontFamily: "system-ui", fontSize: 16, fontWeight: 900, color: "#fbbf24" }}>{totalSvcsARS.toLocaleString("es-AR")} ARS</span>
+                    </div>
+                    {cobradoARS > 0 && (
+                      <div style={{ padding: "8px 20px", borderBottom: "1px solid #0f1520", display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "system-ui", fontSize: 13, color: "#4ade80" }}>✓ Cobrado ARS</span>
+                        <span style={{ fontFamily: "system-ui", fontSize: 14, fontWeight: 700, color: "#4ade80" }}>-{cobradoARS.toLocaleString("es-AR")} ARS</span>
+                      </div>
+                    )}
+                    <div style={{ padding: "12px 20px", background: saldoARSLocal <= 0 ? "rgba(74,222,128,0.06)" : "rgba(251,191,36,0.06)", display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: saldoARSLocal <= 0 ? "#4ade80" : "#fbbf24" }}>
+                        {saldoARSLocal <= 0 ? "✅ PAGO ARS COMPLETO" : "⏳ SALDO ARS PENDIENTE"}
+                      </span>
+                      {saldoARSLocal > 0 && <span style={{ fontFamily: "system-ui", fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>{saldoARSLocal.toLocaleString("es-AR")} ARS</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Total ARS equivalente (para servicios USD) */}
+              {tcambio > 0 && totalUSD > 0 && (
+                <div style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+                  <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>Equivalente USD en pesos (TC: {tcambio.toLocaleString()} ARS)</span>
+                  <span style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 700, color: "#e8334a" }}>{totalARS.toLocaleString("es-AR")} ARS</span>
+                </div>
+              )}
             </div>
           )})()}
 
