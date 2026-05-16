@@ -42766,7 +42766,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
           {/* TAB GENERAL */}
           {tab === "general" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {[["Fecha","fecha","date"],["Cliente","cliente","text"],["Destino","destino","text"],["Servicio Principal","servicio","text"]].map(([l,k,t]) => (
                 <div key={k}>
                   <label style={S.label}>{l}</label>
@@ -42789,9 +42790,9 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 <label style={S.label}>Notas</label>
                 <textarea style={{ ...S.input, height: 80, resize: "vertical" }} value={data.notas||""} onChange={e => update({ notas: e.target.value })} placeholder="Observaciones generales..." />
               </div>
-            </div>
-            {/* PASAJERO PRINCIPAL editable */}
-            {(() => {
+              </div>
+              {/* PASAJERO PRINCIPAL editable */}
+              {(() => {
               const titular = (data.pasajeros || [])[0];
               if (!titular) return null;
               const updateTitular = (changes) => {
@@ -42843,6 +42844,7 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 </div>
               );
             })()}
+            </div>
           )}
 
           {/* TAB PASAJEROS */}
