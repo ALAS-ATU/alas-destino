@@ -42766,7 +42766,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
           {/* TAB GENERAL */}
           {tab === "general" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {[["Fecha","fecha","date"],["Cliente","cliente","text"],["Destino","destino","text"],["Servicio Principal","servicio","text"]].map(([l,k,t]) => (
                 <div key={k}>
                   <label style={S.label}>{l}</label>
@@ -42789,36 +42790,121 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 <label style={S.label}>Notas</label>
                 <textarea style={{ ...S.input, height: 80, resize: "vertical" }} value={data.notas||""} onChange={e => update({ notas: e.target.value })} placeholder="Observaciones generales..." />
               </div>
+              </div>
+              {/* PASAJERO PRINCIPAL editable */}
+              {(() => {
+              const titular = (data.pasajeros || [])[0];
+              if (!titular) return null;
+              const updateTitular = (changes) => {
+                const updatedPax = (data.pasajeros || []).map((p, i) => i === 0 ? { ...p, ...changes } : p);
+                if (titular.paxId) {
+                  try {
+                    const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+                    const updatedAll = allPax.map(x => x.id === titular.paxId ? { ...x, name: changes.nombre || x.name, email: changes.mail || x.email, phone: changes.telefono || x.phone, dni: changes.dni || x.dni, birthdate: changes.nacimiento || x.birthdate, docExpiracion: changes.expiracion || x.docExpiracion } : x);
+                    localStorage.setItem('atd_passengers', JSON.stringify(updatedAll));
+                  } catch {}
+                }
+                update({ pasajeros: updatedPax });
+              };
+              return (
+                <div style={{ marginTop: 16, background: "rgba(232,51,74,0.04)", border: "1px solid rgba(232,51,74,0.25)", borderRadius: 10, padding: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", letterSpacing: "0.08em", marginBottom: 12 }}>👤 PASAJERO PRINCIPAL — {titular.nombre}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                    <div style={{ gridColumn: "1/-1" }}>
+                      <label style={S.label}>Nombre completo</label>
+                      <input style={S.input} value={titular.nombre || ""} onChange={e => updateTitular({ nombre: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Tipo documento</label>
+                      <select style={S.input} value={titular.tipoDoc || "DNI"} onChange={e => updateTitular({ tipoDoc: e.target.value })}>
+                        {["DNI","Pasaporte","CE"].map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Nº Documento</label>
+                      <input style={S.input} value={titular.dni || ""} onChange={e => updateTitular({ dni: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Fecha de Nacimiento</label>
+                      <input type="date" style={S.input} value={titular.nacimiento || ""} onChange={e => updateTitular({ nacimiento: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Email</label>
+                      <input type="email" style={S.input} value={titular.mail || ""} onChange={e => updateTitular({ mail: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Teléfono</label>
+                      <input style={S.input} value={titular.telefono || ""} onChange={e => updateTitular({ telefono: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Expiración documento</label>
+                      <input type="date" style={S.input} value={titular.expiracion || ""} onChange={e => updateTitular({ expiracion: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             </div>
           )}
 
           {/* TAB PASAJEROS */}
           {tab === "pasajeros" && (
             <div>
-              {(data.pasajeros || []).map(p => (
-                <div key={p.id} style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: 14, marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                    <div style={{ fontWeight: 700, color: "#ffffff", fontFamily: "system-ui", fontSize: 14, marginBottom: 10 }}>{p.nombre}</div>
+              {(data.pasajeros || []).map((p, idx) => {
+                const updateP = (changes) => {
+                  const updatedPax = (data.pasajeros || []).map((x, i) => i === idx ? { ...x, ...changes } : x);
+                  // Sync también al módulo global de pasajeros
+                  if (p.paxId) {
+                    try {
+                      const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+                      const updatedAll = allPax.map(x => x.id === p.paxId ? { ...x, name: changes.nombre ?? x.name, email: changes.mail ?? x.email, phone: changes.telefono ?? x.phone, dni: changes.dni ?? x.dni, birthdate: changes.nacimiento ?? x.birthdate, docExpiracion: changes.expiracion ?? x.docExpiracion } : x);
+                      localStorage.setItem('atd_passengers', JSON.stringify(updatedAll));
+                    } catch {}
+                  }
+                  update({ pasajeros: updatedPax });
+                };
+                return (
+                <div key={p.id} style={{ background: "#111d3c", border: `1px solid ${idx === 0 ? 'rgba(232,51,74,0.4)' : '#1e2e6a'}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {idx === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#e8334a", background: "rgba(232,51,74,0.12)", padding: "2px 8px", borderRadius: 10, fontFamily: "system-ui" }}>TITULAR</span>}
+                      <span style={{ fontWeight: 700, color: "#ffffff", fontFamily: "system-ui", fontSize: 14 }}>{p.nombre || "Sin nombre"}</span>
+                    </div>
                     <button style={{ ...S.btn("danger"), padding: "3px 8px", fontSize: 11 }} onClick={() => removePax(p.id)}>✕</button>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontFamily: "system-ui", fontSize: 12 }}>
-                    {[["Doc.", `${p.tipoDoc}: ${p.dni}`],["Nacimiento", p.nacimiento],["Emisión doc.", p.emision],["Expiración doc.", p.expiracion],["Email", p.mail],["Teléfono", p.telefono]].map(([l,v]) => v ? (
-                      <div key={l}><span style={{ color: "#7080b0" }}>{l}: </span><span style={{ color: "#c8d4f0" }}>{v}</span></div>
-                    ) : null)}
-                    {p.visaUSA && (
-                      <div style={{ gridColumn: "1/-1", background: "rgba(232,51,74,0.06)", borderRadius: 6, padding: "6px 10px", marginTop: 4 }}>
-                        <span style={{ color: "#e8334a", fontWeight: 700 }}>🇺🇸 VISA USA</span>
-                        <span style={{ color: "#7080b0", marginLeft: 12 }}>N°: {p.visaNumero} · Tipo: {p.visaTipo} · Entradas: {p.visaEntradas} · Vence: {p.visaExpiracion}</span>
-                      </div>
-                    )}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                    <div style={{ gridColumn: "1/-1" }}>
+                      <label style={S.label}>Nombre completo</label>
+                      <input style={S.input} value={p.nombre || ""} onChange={e => updateP({ nombre: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={S.label}>Tipo documento</label>
+                      <select style={S.input} value={p.tipoDoc || "DNI"} onChange={e => updateP({ tipoDoc: e.target.value })}>
+                        {["DNI","Pasaporte","CE"].map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div><label style={S.label}>Nº Documento</label><input style={S.input} value={p.dni || ""} onChange={e => updateP({ dni: e.target.value })} /></div>
+                    <div><label style={S.label}>Fecha de Nacimiento</label><input type="date" style={S.input} value={p.nacimiento || ""} onChange={e => updateP({ nacimiento: e.target.value })} /></div>
+                    <div><label style={S.label}>Emisión documento</label><input type="date" style={S.input} value={p.emision || ""} onChange={e => updateP({ emision: e.target.value })} /></div>
+                    <div><label style={S.label}>Expiración documento</label><input type="date" style={S.input} value={p.expiracion || ""} onChange={e => updateP({ expiracion: e.target.value })} /></div>
+                    <div><label style={S.label}>Email</label><input type="email" style={S.input} value={p.mail || ""} onChange={e => updateP({ mail: e.target.value })} /></div>
+                    <div><label style={S.label}>Teléfono</label><input style={S.input} value={p.telefono || ""} onChange={e => updateP({ telefono: e.target.value })} /></div>
+                    <div><label style={S.label}>Nº Pasaporte</label><input style={S.input} value={p.pasaporte || ""} onChange={e => updateP({ pasaporte: e.target.value })} /></div>
                     {p.docAdj && (
                       <div style={{ gridColumn: "1/-1" }}>
                         <a href={p.docAdj.data} download={p.docAdj.name} style={{ color: "#60a5fa", fontSize: 11 }}>📎 {p.docAdj.name}</a>
                       </div>
                     )}
+                    {p.visaUSA && (
+                      <div style={{ gridColumn: "1/-1", background: "rgba(232,51,74,0.06)", borderRadius: 6, padding: "6px 10px" }}>
+                        <span style={{ color: "#e8334a", fontWeight: 700, fontFamily: "system-ui", fontSize: 12 }}>🇺🇸 VISA USA</span>
+                        <span style={{ color: "#7080b0", marginLeft: 12, fontFamily: "system-ui", fontSize: 11 }}>N°: {p.visaNumero} · Tipo: {p.visaTipo} · Vence: {p.visaExpiracion}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               {/* Add passenger form */}
               <div style={{ background: "rgba(232,51,74,0.04)", border: "1px solid rgba(232,51,74,0.2)", borderRadius: 10, padding: 16 }}>
@@ -43531,21 +43617,72 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
           {/* TAB FACTURACION */}
           {tab === "facturacion" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Razón Social / Nombre de Facturación</label><input style={S.input} value={data.facRazonSocial||""} onChange={e => update({ facRazonSocial: e.target.value })} /></div>
-              <div><label style={S.label}>CUIT / DNI</label><input style={S.input} value={data.facCuit||""} onChange={e => update({ facCuit: e.target.value })} /></div>
-              <div><label style={S.label}>Condición IVA</label>
-                <select style={S.input} value={data.facIva||"Consumidor Final"} onChange={e => update({ facIva: e.target.value })}>
-                  {["Consumidor Final","Responsable Inscripto","Monotributista","Exento"].map(t => <option key={t}>{t}</option>)}
-                </select>
+            <div>
+              {(data.pasajeros || []).length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa", fontFamily: "system-ui", letterSpacing: "0.08em" }}>👥 PASAJEROS DE LA VENTA</div>
+                    <button style={{ ...S.btn("ghost"), padding: "4px 12px", fontSize: 11 }} onClick={() => {
+                      const lineas = (data.pasajeros || []).map(p => `• ${p.nombre}${p.tipoDoc && p.dni ? ` · ${p.tipoDoc}: ${p.dni}` : ""}${p.nacimiento ? ` · Nac: ${p.nacimiento.split("-").reverse().join("/")}` : ""}${p.mail ? ` · ${p.mail}` : ""}${p.telefono ? ` · Tel: ${p.telefono}` : ""}`).join("\n");
+                      const texto = `Pasajeros — ${data.ventaId || ""} · ${data.cliente || ""}\n${data.destino || ""} · ${data.fecha || ""}\n\n${lineas}`;
+                      navigator.clipboard.writeText(texto).then(() => alert("✓ Copiado al portapapeles")).catch(() => { const ta = document.createElement("textarea"); ta.value = texto; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); alert("✓ Copiado al portapapeles"); });
+                    }}>📋 Copiar para mail</button>
+                  </div>
+                  {(data.pasajeros || []).map((p, i) => (
+                    <div key={p.id} style={{ background: "#111d3c", border: `1px solid ${i === 0 ? "#e8334a" : "#1e2e6a"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                      {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", background: "rgba(232,51,74,0.1)", padding: "2px 8px", borderRadius: 10 }}>TITULAR</span>}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", fontFamily: "system-ui" }}>{p.nombre}</span>
+                      {p.tipoDoc && p.dni && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>{p.tipoDoc}: {p.dni}</span>}
+                      {p.nacimiento && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>Nac: {p.nacimiento.split("-").reverse().join("/")}</span>}
+                      {p.mail && <span style={{ fontSize: 11, color: "#60a5fa", fontFamily: "system-ui" }}>✉ {p.mail}</span>}
+                      {p.telefono && <span style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui" }}>📞 {p.telefono}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui", letterSpacing: "0.08em" }}>🧾 DATOS DE FACTURACIÓN</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {/* Traer datos de pasajero */}
+                  {(data.pasajeros || []).length > 0 && (
+                    <select style={{ ...S.input, width: "auto", fontSize: 11, padding: "4px 8px" }}
+                      defaultValue=""
+                      onChange={e => {
+                        const idx = parseInt(e.target.value);
+                        if (isNaN(idx)) return;
+                        const p = (data.pasajeros || [])[idx];
+                        if (!p) return;
+                        update({ facRazonSocial: p.nombre || "", facCuit: p.dni || "", facEmail: p.mail || "", facTel: p.telefono || "" });
+                        e.target.value = "";
+                      }}>
+                      <option value="">👤 Traer de pasajero...</option>
+                      {(data.pasajeros || []).map((p, i) => <option key={i} value={i}>{p.nombre}</option>)}
+                    </select>
+                  )}
+                  {/* Copiar datos para mail */}
+                  <button style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }} onClick={() => {
+                    const txt = `Datos de Facturación — ${data.ventaId || ""}\n\nRazón Social: ${data.facRazonSocial || "—"}\nCUIT/DNI: ${data.facCuit || "—"}\nCondición IVA: ${data.facIva || "—"}\nEmail: ${data.facEmail || "—"}\nTeléfono: ${data.facTel || "—"}\nDirección: ${[data.facCalle, data.facCiudad, data.facProvincia, data.facCP, data.facPais].filter(Boolean).join(", ") || "—"}`;
+                    navigator.clipboard.writeText(txt).catch(() => { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); });
+                    alert("✓ Datos de facturación copiados");
+                  }}>📋 Copiar</button>
+                </div>
               </div>
-              <div><label style={S.label}>Email de facturación</label><input type="email" style={S.input} value={data.facEmail||""} onChange={e => update({ facEmail: e.target.value })} /></div>
-              <div><label style={S.label}>Teléfono</label><input style={S.input} value={data.facTel||""} onChange={e => update({ facTel: e.target.value })} /></div>
-              <div><label style={S.label}>Calle y número</label><input style={S.input} value={data.facCalle||""} onChange={e => update({ facCalle: e.target.value })} /></div>
-              <div><label style={S.label}>Ciudad</label><input style={S.input} value={data.facCiudad||""} onChange={e => update({ facCiudad: e.target.value })} /></div>
-              <div><label style={S.label}>Provincia</label><input style={S.input} value={data.facProvincia||""} onChange={e => update({ facProvincia: e.target.value })} /></div>
-              <div><label style={S.label}>País</label><input style={S.input} value={data.facPais||"Argentina"} onChange={e => update({ facPais: e.target.value })} /></div>
-              <div><label style={S.label}>Código Postal</label><input style={S.input} value={data.facCP||""} onChange={e => update({ facCP: e.target.value })} /></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div style={{ gridColumn: "1/-1" }}><label style={S.label}>Razón Social / Nombre de Facturación</label><input style={S.input} value={data.facRazonSocial||""} onChange={e => update({ facRazonSocial: e.target.value })} /></div>
+                <div><label style={S.label}>CUIT / DNI</label><input style={S.input} value={data.facCuit||""} onChange={e => update({ facCuit: e.target.value })} /></div>
+                <div><label style={S.label}>Condición IVA</label>
+                  <select style={S.input} value={data.facIva||"Consumidor Final"} onChange={e => update({ facIva: e.target.value })}>
+                    {["Consumidor Final","Responsable Inscripto","Monotributista","Exento"].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div><label style={S.label}>Email de facturación</label><input type="email" style={S.input} value={data.facEmail||""} onChange={e => update({ facEmail: e.target.value })} /></div>
+                <div><label style={S.label}>Teléfono</label><input style={S.input} value={data.facTel||""} onChange={e => update({ facTel: e.target.value })} /></div>
+                <div><label style={S.label}>Calle y número</label><input style={S.input} value={data.facCalle||""} onChange={e => update({ facCalle: e.target.value })} /></div>
+                <div><label style={S.label}>Ciudad</label><input style={S.input} value={data.facCiudad||""} onChange={e => update({ facCiudad: e.target.value })} /></div>
+                <div><label style={S.label}>Provincia</label><input style={S.input} value={data.facProvincia||""} onChange={e => update({ facProvincia: e.target.value })} /></div>
+                <div><label style={S.label}>País</label><input style={S.input} value={data.facPais||"Argentina"} onChange={e => update({ facPais: e.target.value })} /></div>
+                <div><label style={S.label}>Código Postal</label><input style={S.input} value={data.facCP||""} onChange={e => update({ facCP: e.target.value })} /></div>
+              </div>
             </div>
           )}
 
@@ -43586,14 +43723,31 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
                 {/* Fila servicios */}
                 {(data.servicios||[]).filter(s => s.moneda !== 'ARS').map(s => (
-                  <div key={s.id} style={{ padding: "8px 20px", borderBottom: "1px solid #0f1535", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <span style={{ fontSize: 11, color: "#60a5fa", fontFamily: "system-ui" }}>{s.tipo}</span>
-                      <span style={{ fontSize: 12, color: "#c8d4f0", fontFamily: "system-ui" }}>{s.descripcion}</span>
+                  <div key={s.id} style={{ padding: "8px 20px", borderBottom: "1px solid #0f1535" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: "#60a5fa", fontFamily: "system-ui" }}>{s.tipo}</span>
+                        <span style={{ fontSize: 12, color: "#c8d4f0", fontFamily: "system-ui" }}>{s.descripcion}</span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: s.precio > 0 ? "#ffffff" : "#4ade80", fontFamily: "system-ui" }}>
+                        {s.precio > 0 ? `${Number(s.precio).toLocaleString()} USD` : "Incluido"}
+                      </span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: s.precio > 0 ? "#ffffff" : "#4ade80", fontFamily: "system-ui" }}>
-                      {s.precio > 0 ? `$${Number(s.precio).toLocaleString()} USD` : "Incluido"}
-                    </span>
+                    {/* Fechas de pago por servicio */}
+                    {(s.fechaSeñaCliente || s.fechaSaldoCliente) && (
+                      <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
+                        {s.fechaSeñaCliente && (
+                          <span style={{ fontSize: 11, fontFamily: "system-ui", color: colorFecha(s.fechaSeñaCliente) }}>
+                            ⚡ Seña: <strong>{fechaFmt(s.fechaSeñaCliente)}</strong>
+                          </span>
+                        )}
+                        {s.fechaSaldoCliente && (
+                          <span style={{ fontSize: 11, fontFamily: "system-ui", color: colorFecha(s.fechaSaldoCliente) }}>
+                            💰 Saldo: <strong>{fechaFmt(s.fechaSaldoCliente)}</strong>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -43601,21 +43755,22 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                 <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e2e6a", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(232,51,74,0.06)" }}>
                   <span style={{ fontFamily: "system-ui", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>TOTAL DEL VIAJE</span>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 900, color: "#e8334a" }}>${totalUSD.toLocaleString()} USD</div>
-                    {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>${totalARS.toLocaleString("es-AR")} ARS</div>}
+                    <div style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 900, color: "#e8334a" }}>{totalUSD.toLocaleString()} USD</div>
+                    {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>{totalARS.toLocaleString("es-AR")} ARS</div>}
                   </div>
                 </div>
 
-                {/* Seña abonada */}
+                {/* Seña / cobros abonados */}
                 {totalCobradoUSD > 0 && (
                   <div style={{ padding: "10px 20px", borderBottom: "1px solid #0f1535", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <span style={{ fontFamily: "system-ui", fontSize: 13, color: "#4ade80" }}>✓ Abonado</span>
-                      {fechaSeña && <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0", marginLeft: 10 }}>Seña: {fechaFmt(fechaSeña)}</span>}
+                      {fechaSeña && <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#4ade80", marginLeft: 10, fontWeight: 700 }}>· Seña: {fechaFmt(fechaSeña)}</span>}
+                      {!fechaSeña && <span style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0", marginLeft: 10 }}>Pago parcial</span>}
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontFamily: "system-ui", fontSize: 16, fontWeight: 700, color: "#4ade80" }}>-${totalCobradoUSD.toLocaleString()} USD</div>
-                      {totalCobradoARS > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>-${totalCobradoARS.toLocaleString("es-AR")} ARS</div>}
+                      <div style={{ fontFamily: "system-ui", fontSize: 16, fontWeight: 700, color: "#4ade80" }}>-{totalCobradoUSD.toLocaleString()} USD</div>
+                      {totalCobradoARS > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>-{totalCobradoARS.toLocaleString("es-AR")} ARS</div>}
                     </div>
                   </div>
                 )}
@@ -43634,8 +43789,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                   </div>
                   {saldoUSD > 0 && (
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontFamily: "system-ui", fontSize: 22, fontWeight: 900, color: "#fbbf24" }}>${saldoUSD.toLocaleString()} USD</div>
-                      {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>${(saldoUSD * tcambio).toLocaleString("es-AR")} ARS</div>}
+                      <div style={{ fontFamily: "system-ui", fontSize: 22, fontWeight: 900, color: "#fbbf24" }}>{saldoUSD.toLocaleString()} USD</div>
+                      {tcambio > 0 && <div style={{ fontFamily: "system-ui", fontSize: 11, color: "#7080b0" }}>{(saldoUSD * tcambio).toLocaleString("es-AR")} ARS</div>}
                     </div>
                   )}
                 </div>
@@ -43643,8 +43798,8 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
 
               {/* Total ARS equivalente */}
               <div style={{ background: "#111d3c", border: "1px solid #1e2e6a", borderRadius: 10, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>Equivalente total en pesos (TC: ${tcambio.toLocaleString()})</span>
-                <span style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 700, color: "#e8334a" }}>${totalARS.toLocaleString("es-AR")} ARS</span>
+                <span style={{ fontFamily: "system-ui", fontSize: 12, color: "#7080b0" }}>Equivalente total en pesos (TC: {tcambio.toLocaleString()} ARS)</span>
+                <span style={{ fontFamily: "system-ui", fontSize: 20, fontWeight: 700, color: "#e8334a" }}>{totalARS.toLocaleString("es-AR")} ARS</span>
               </div>
             </div>
           )})()}
