@@ -38562,14 +38562,51 @@ function Dashboard({ quotes, payments, passengers, setView }) {
     setAlertasDone(nuevo);
     localStorage.setItem('atd_alertas_done', JSON.stringify([...nuevo]));
   };
-  const ingresos = payments.filter(p => p.status === "Pagado").reduce((a, p) => a + p.amount, 0);
-  const cotizacionesActivas = quotes.filter(q => q.status !== "Cancelada").length;
-  const viajesConfirmados = quotes.filter(q => q.status === "Confirmada").length;
+  // === STATS DEL DASHBOARD ===
+  const MESES_NOMBRES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const mesActual = MESES_NOMBRES[new Date().getMonth()];
+  const añoActual = new Date().getFullYear();
+
+  // Leer todas las ventas de todos los meses
+  const todasLasVentas = (() => {
+    const result = [];
+    MESES_NOMBRES.forEach(m => {
+      try {
+        const vs = JSON.parse(localStorage.getItem(`ventas_${añoActual}_${m}`) || '[]');
+        vs.forEach(v => result.push({ ...v, _mes: m }));
+      } catch {}
+    });
+    return result;
+  })();
+
+  // Ventas del mes actual
+  const ventasMesActual = todasLasVentas.filter(v => v._mes === mesActual);
+
+  // INGRESOS DEL MES: suma cobros de ventas del mes actual
+  const ingresosMes = ventasMesActual.reduce((acc, v) => {
+    const cobrosUSD = (v.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
+    return acc + cobrosUSD;
+  }, 0);
+
+  // COTIZACIONES ACTIVAS: no convertidas y no canceladas
+  const cotizacionesActivas = quotes.filter(q => !q.convertida && q.status !== "Cancelada" && q.status !== "Confirmada").length;
+
+  // VIAJES CONFIRMADOS: ventas con estado Confirmada en todos los meses
+  const viajesConfirmados = todasLasVentas.filter(v => v.estado === "Confirmada").length;
+
+  // TASA DE CONVERSIÓN: cotizaciones convertidas / total cotizaciones
+  const totalCotizaciones = quotes.length;
+  const cotizacionesConvertidas = quotes.filter(q => q.convertida || q.status === "Confirmada").length;
+  const tasaConversion = totalCotizaciones > 0 ? Math.round((cotizacionesConvertidas / totalCotizaciones) * 100) : 0;
+
+  // PASAJEROS ACTIVOS: suma pasajeros de todas las ventas confirmadas
+  const pasajerosActivos = todasLasVentas.filter(v => v.estado === "Confirmada").reduce((acc, v) => acc + ((v.pasajeros || []).length || 1), 0);
+
   const stats = [
-    { label: "Ingresos del Mes", value: `$${ingresos.toLocaleString()}`, icon: "💰", sub: "Pagos confirmados" },
-    { label: "Cotizaciones Activas", value: String(cotizacionesActivas), icon: "📋", sub: "Sin canceladas" },
-    { label: "Pasajeros Totales", value: String(passengers.length), icon: "👥", sub: "Registrados" },
-    { label: "Viajes Confirmados", value: String(viajesConfirmados), icon: "✈️", sub: "Cotizaciones confirmadas" },
+    { label: "Ingresos del Mes", value: `${ingresosMes.toLocaleString()} USD`, icon: "💰", sub: `${mesActual.charAt(0).toUpperCase() + mesActual.slice(1)} ${añoActual}` },
+    { label: "Cotizaciones Activas", value: String(cotizacionesActivas), icon: "📋", sub: `${tasaConversion}% conversión` },
+    { label: "Pasajeros Activos", value: String(pasajerosActivos), icon: "👥", sub: "En ventas confirmadas" },
+    { label: "Viajes Confirmados", value: String(viajesConfirmados), icon: "✈️", sub: `${todasLasVentas.length} ventas totales` },
   ];
 
   // === VENCIMIENTOS PRÓXIMOS (2 días) ===
@@ -41534,8 +41571,68 @@ function ReportesTab({ payments, mesReporte, setMesReporte }) {
   const destinosGlobal = Object.entries(allVentas.reduce((acc,v) => { const k=v.destino||"Sin destino"; acc[k]=(acc[k]||0)+1; return acc; }, {})).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const provGlobal = Object.entries(payments.filter(p=>p.tipo==="proveedor").reduce((acc,p) => { const k=p.proveedor||"Sin proveedor"; acc[k]=(acc[k]||0)+(p.amount||0); return acc; }, {})).sort((a,b)=>b[1]-a[1]);
 
+  // === REPORTE ANUAL: ingresos y pasajeros por mes ===
+  const reporteAnual = MESES.map(m => {
+    const ventas = getVentasMes(m);
+    const confirmadas = ventas.filter(v => v.estado === "Confirmada");
+    const ingresos = confirmadas.reduce((acc, v) => {
+      return acc + (v.cobros || []).filter(c => c.moneda !== 'ARS').reduce((a, c) => a + (c.monto || 0), 0);
+    }, 0);
+    const totalUSD = confirmadas.reduce((acc, v) => {
+      const svcSum = (v.servicios || []).filter(s => s.moneda !== 'ARS').reduce((a, s) => a + (Number(s.precio) || 0), 0);
+      return acc + (svcSum || v.monto || 0);
+    }, 0);
+    const pasajeros = confirmadas.reduce((acc, v) => acc + ((v.pasajeros || []).length || 1), 0);
+    return { mes: m, ventas: confirmadas.length, totalUSD, ingresos, pasajeros };
+  });
+
+  const acumIngresos = reporteAnual.reduce((acc, r) => acc + r.ingresos, 0);
+  const acumVentas = reporteAnual.reduce((acc, r) => acc + r.ventas, 0);
+  const acumPasajeros = reporteAnual.reduce((acc, r) => acc + r.pasajeros, 0);
+  const acumTotal = reporteAnual.reduce((acc, r) => acc + r.totalUSD, 0);
+
   return (
     <div>
+      {/* RESUMEN ANUAL */}
+      <div style={{ ...S.card, marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8334a", fontFamily: "system-ui" }}>📊 RESUMEN ANUAL 2026 — Ingresos y Pasajeros por Mes</div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "system-ui", fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #1e2e6a" }}>
+                {["Mes","Ventas","Total viajes USD","Cobrado USD","Pasajeros"].map(h => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: h === "Mes" ? "left" : "right", color: "#7080b0", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {reporteAnual.map((r, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid rgba(30,46,106,0.5)", background: r.mes === mesReporte ? "rgba(232,51,74,0.06)" : "transparent" }}>
+                  <td style={{ padding: "8px 12px", color: r.ventas > 0 ? "#ffffff" : "#3a4a80", fontWeight: r.ventas > 0 ? 600 : 400 }}>
+                    {r.mes.charAt(0).toUpperCase() + r.mes.slice(1)}
+                  </td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.ventas > 0 ? "#60a5fa" : "#3a4a80" }}>{r.ventas}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.totalUSD > 0 ? "#e8334a" : "#3a4a80", fontWeight: 600 }}>{r.totalUSD > 0 ? r.totalUSD.toLocaleString() + " USD" : "—"}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.ingresos > 0 ? "#4ade80" : "#3a4a80", fontWeight: 600 }}>{r.ingresos > 0 ? r.ingresos.toLocaleString() + " USD" : "—"}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", color: r.pasajeros > 0 ? "#fbbf24" : "#3a4a80" }}>{r.pasajeros || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid #e8334a", background: "rgba(232,51,74,0.08)" }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#e8334a", fontFamily: "system-ui" }}>ACUMULADO</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#60a5fa" }}>{acumVentas}</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#e8334a" }}>{acumTotal.toLocaleString()} USD</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#4ade80" }}>{acumIngresos.toLocaleString()} USD</td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#fbbf24" }}>{acumPasajeros}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 24 }}>
         <div>
           <label style={S.label}>Mes a reportar</label>
