@@ -38218,8 +38218,302 @@ function Dashboard({ quotes, payments, passengers }) {
     { label: "Pasajeros Totales", value: String(passengers.length), icon: "👥", sub: "Registrados" },
     { label: "Viajes Confirmados", value: String(viajesConfirmados), icon: "✈️", sub: "Cotizaciones confirmadas" },
   ];
+
+  // === VENCIMIENTOS PRÓXIMOS (2 días) ===
+  const MESES_KEYS = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"].map(m => `ventas_2026_${m}`);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const alertas = [];
+
+  // Helper: días hasta un cumpleaños este año (o el próximo si ya pasó)
+  const diasHastaCumple = (fechaNac) => {
+    if (!fechaNac) return null;
+    try {
+      const partes = fechaNac.includes('-') ? fechaNac.split('-') : fechaNac.split('/').reverse();
+      const mes = parseInt(partes[1]) - 1;
+      const dia = parseInt(partes[2] || partes[0]);
+      const cumpleEsteAnio = new Date(hoy.getFullYear(), mes, dia); cumpleEsteAnio.setHours(0,0,0,0);
+      if (cumpleEsteAnio < hoy) cumpleEsteAnio.setFullYear(hoy.getFullYear() + 1);
+      return Math.round((cumpleEsteAnio - hoy) / 86400000);
+    } catch { return null; }
+  };
+
+  // Vencimientos de pagos en ventas
+  MESES_KEYS.forEach(key => {
+    try {
+      const ventas = JSON.parse(localStorage.getItem(key) || '[]');
+      ventas.forEach(v => {
+        // Fechas de pago por servicio
+        (v.servicios || []).forEach(s => {
+          [
+            { campo: 'fechaSeñaCliente',    tipo: '⚡ Seña cliente',    color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
+            { campo: 'fechaSaldoCliente',   tipo: '💰 Saldo cliente',   color: '#4ade80', bg: 'rgba(74,222,128,0.10)' },
+            { campo: 'fechaSeñaProveedor',  tipo: '🔵 Seña proveedor',  color: '#60a5fa', bg: 'rgba(96,165,250,0.10)' },
+            { campo: 'fechaSaldoProveedor', tipo: '🟣 Saldo proveedor', color: '#a78bfa', bg: 'rgba(167,139,250,0.10)' },
+          ].forEach(({ campo, tipo, color, bg }) => {
+            if (!s[campo]) return;
+            const fecha = new Date(s[campo]); fecha.setHours(0,0,0,0);
+            const diffDias = Math.round((fecha - hoy) / 86400000);
+            if (diffDias >= 0 && diffDias <= 2) {
+              alertas.push({ cliente: v.cliente, ventaId: v.ventaId, servicio: s.descripcion || s.tipo || '', tipo, color, bg, fecha: s[campo], diffDias });
+            }
+          });
+        });
+        // Cumpleaños de pasajeros en la venta
+        (v.pasajeros || []).forEach(p => {
+          const diff = diasHastaCumple(p.nacimiento);
+          if (diff !== null && diff >= 0 && diff <= 2) {
+            alertas.push({
+              cliente: p.nombre || p.name || '',
+              ventaId: v.ventaId,
+              servicio: `🎂 Cumpleaños`,
+              tipo: '🎂 Cumpleaños',
+              color: '#f472b6',
+              bg: 'rgba(244,114,182,0.10)',
+              fecha: p.nacimiento,
+              diffDias: diff,
+              esCumple: true,
+            });
+          }
+        });
+      });
+    } catch {}
+  });
+
+  // Cumpleaños de pasajeros marcados manualmente con 🔔 en el módulo Pasajeros
+  try {
+    const globalPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+    const yaAgregados = new Set(alertas.filter(a => a.esCumple).map(a => a.cliente));
+    globalPax.filter(p => p.alertaCumple).forEach(p => {
+      const nombre = p.name || p.nombre || '';
+      if (yaAgregados.has(nombre)) return;
+      const diff = diasHastaCumple(p.birthdate || p.nacimiento);
+      if (diff !== null && diff >= 0 && diff <= 2) {
+        alertas.push({ cliente: nombre, ventaId: '', servicio: '🎂 Cumpleaños', tipo: '🎂 Cumpleaños', color: '#f472b6', bg: 'rgba(244,114,182,0.10)', fecha: p.birthdate || p.nacimiento, diffDias: diff, esCumple: true });
+      }
+    });
+  } catch {}
+
+  alertas.sort((a, b) => a.diffDias - b.diffDias);
+  const fmtFecha = f => {
+    if (!f) return '';
+    const partes = f.includes('-') ? f.split('-') : f.split('/').reverse();
+    return `${partes[2] || partes[0]}/${partes[1]}`;
+  };
+  const fmtFechaCompleta = f => f ? f.split('-').reverse().join('/') : '';
+  const labelDia = d => d === 0 ? '🔴 HOY' : d === 1 ? '🟠 MAÑANA' : '🟡 En 2 días';
+
+  // Extrae nombre de pila: "CORREA SOTO, EMANUEL MATIAS" → "EMANUEL"
+  const primerNombre = (nombreCompleto) => {
+    if (!nombreCompleto) return '';
+    const partes = nombreCompleto.includes(',') ? nombreCompleto.split(',')[1].trim() : nombreCompleto;
+    return partes.split(' ')[0].trim();
+  };
+
+  const generarTarjetaCumple = (alerta) => {
+    const nombre = primerNombre(alerta.cliente);
+    let phone = '';
+    try {
+      const paxList = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      const pax = paxList.find(p => (p.name||'').includes(alerta.cliente) || alerta.cliente.includes(p.name||''));
+      if (pax) phone = (pax.phone||pax.telefono||'').replace(/\D/g,'').replace(/^0/,'54').replace(/^(?!549)/,'549');
+    } catch {}
+
+    const waMsg = encodeURIComponent(`🎂 ¡Feliz cumpleaños ${nombre}! 🎉\n\nDesde Alas a tu Destino te deseamos un día increíble. ✈️\n\n_Viajar enriquece el alma_ 💕`);
+    const waLink = phone ? `https://wa.me/${phone}?text=${waMsg}` : `https://wa.me/?text=${waMsg}`;
+
+    // Genera PNG via Canvas y lo descarga. WhatsApp se abre ANTES del async para evitar bloqueo de popup
+    const drawAndShare = (openWa) => {
+      // Abrir WhatsApp ahora (contexto síncrono del click, no bloqueado)
+      if (openWa) window.open(waLink, '_blank');
+      const W = 420, H = 800;
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      // Fondo degradado rosa coral
+      const grad = ctx.createLinearGradient(W*0.3, 0, 0, H);
+      grad.addColorStop(0, '#e85c7a');
+      grad.addColorStop(0.4, '#d44060');
+      grad.addColorStop(0.7, '#c03060');
+      grad.addColorStop(1, '#b02050');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Emojis decorativos arriba
+      ctx.font = '64px serif';
+      ctx.fillText('🎈', 10, 80);
+      ctx.fillText('🎈', 80, 50);
+      ctx.save();
+      ctx.translate(360, 70);
+      ctx.rotate(-0.26);
+      ctx.font = '80px serif';
+      ctx.fillText('✈️', 0, 0);
+      ctx.restore();
+
+      // Título principal
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#1a2580';
+      ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+      ctx.fillText('ALAS A TU DESTINO', W/2+1, 271);
+      ctx.fillText('TE DESEA UN FELIZ', W/2+1, 311);
+      ctx.fillText('CUMPLEAÑOS', W/2+1, 351);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 34px Arial Black, Arial, sans-serif';
+      ctx.fillText('ALAS A TU DESTINO', W/2, 270);
+      ctx.fillText('TE DESEA UN FELIZ', W/2, 310);
+      ctx.fillText('CUMPLEAÑOS', W/2, 350);
+
+      // Nombre de pila grande
+      const nomSize = nombre.length > 8 ? 54 : 64;
+      ctx.font = `bold ${nomSize}px Arial Black, Arial, sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(26,37,128,0.5)';
+      ctx.shadowBlur = 12; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 4;
+      ctx.fillText(`${nombre.toUpperCase()}!!!`, W/2, 450);
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+      // Tagline
+      ctx.font = 'bold 17px Arial, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.9;
+      ctx.fillText('VIAJAR ENRIQUECE EL ALMA', W/2, 510);
+      ctx.globalAlpha = 1;
+
+      // Emoji corazón abajo derecha
+      ctx.textAlign = 'right';
+      ctx.font = '52px serif';
+      ctx.fillText('💕', W - 14, 570);
+
+      // Banda inferior "FELIZ CUMPLEAÑOS" repetido
+      ctx.fillStyle = 'rgba(26,37,128,0.18)';
+      ctx.fillRect(0, 595, W, H - 595);
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 26px Arial Black, Arial, sans-serif';
+      ctx.fillStyle = '#1a2580';
+      ctx.globalAlpha = 0.55;
+      ['FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  ','FELIZ CUMPLEAÑOS  '].forEach((t, i) => {
+        ctx.fillText(t, -10, 625 + i * 38);
+      });
+      ctx.globalAlpha = 1;
+
+      canvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        // Descargar imagen
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cumple_${nombre.toLowerCase()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }, 'image/png');
+    };
+
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feliz Cumpleaños ${nombre}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Montserrat',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;overflow:hidden;background:#b02050}
+  .bg{position:fixed;inset:0;background:linear-gradient(160deg,#e85c7a 0%,#d44060 40%,#c03060 70%,#b02050 100%);z-index:0}
+  .card{position:relative;z-index:1;width:min(420px,100vw);min-height:calc(100vh - 64px);display:flex;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden}
+  .deco-top{width:100%;display:flex;justify-content:space-between;align-items:flex-start;padding:10px 10px 0;font-size:52px;line-height:1}
+  .plane{font-size:78px;transform:rotate(-15deg);filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))}
+  .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 24px;text-align:center;gap:14px}
+  .titulo{font-size:clamp(26px,8vw,36px);font-weight:900;color:#1a2580;text-shadow:2px 3px 0 rgba(255,255,255,.25),-1px -1px 0 #fff;line-height:1.15;letter-spacing:1px;text-transform:uppercase}
+  .nombre{font-size:clamp(40px,13vw,60px);font-weight:900;color:#fff;text-shadow:0 0 30px rgba(255,255,255,.5),2px 4px 0 rgba(26,37,128,.4);letter-spacing:2px;text-transform:uppercase;animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+  .tagline{font-size:clamp(14px,4vw,17px);font-weight:700;color:#fff;letter-spacing:3px;text-transform:uppercase;opacity:.9}
+  .deco-bottom{width:100%;text-align:right;padding-right:16px;font-size:52px}
+  .repeat{width:100%;overflow:hidden;padding:10px 0 0;border-top:2px solid rgba(26,37,128,.2);background:rgba(26,37,128,.15)}
+  .repeat-text{font-size:clamp(18px,5vw,24px);font-weight:900;color:#1a2580;opacity:.55;white-space:nowrap;letter-spacing:2px;line-height:1.7;text-transform:uppercase;padding-left:8px}
+  .btns{position:fixed;bottom:0;left:0;right:0;display:flex;z-index:10;height:64px}
+  .btn{flex:1;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:'Montserrat',sans-serif;letter-spacing:.5px}
+  .btn-dl{background:#1a2580;color:#fff}
+  .btn-wa{background:#25d366;color:#fff}
+  @media print{.btns{display:none}}
+</style></head><body>
+<div class="bg"></div>
+<div class="card">
+  <div class="deco-top"><span>🎈</span><span>🎈</span><div class="plane">✈️</div></div>
+  <div class="main">
+    <div class="titulo">Alas a tu Destino<br>te desea un<br>Feliz Cumpleaños</div>
+    <div class="nombre">${nombre}!!!</div>
+    <div class="tagline">Viajar enriquece el alma</div>
+  </div>
+  <div class="deco-bottom">💕</div>
+  <div class="repeat">${'<div class="repeat-text">FELIZ CUMPLEAÑOS &nbsp;&nbsp;</div>'.repeat(5)}</div>
+</div>
+<div class="btns">
+  <button class="btn btn-dl" id="btnDl">📥 Descargar imagen</button>
+  <button class="btn btn-wa" id="btnWa">💬 Enviar por WhatsApp</button>
+</div>
+<script>
+  var waLink = "${waLink}";
+  document.getElementById('btnDl').onclick = function() {
+    window.opener && window.opener.postMessage('download','*');
+  };
+  document.getElementById('btnWa').onclick = function() {
+    // Abrir WA directamente desde el popup (contexto de click = no bloqueado)
+    window.open(waLink, '_blank');
+    // También pedir descarga de imagen al parent
+    window.opener && window.opener.postMessage('download','*');
+  };
+</script>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=480,height=820');
+    w.document.write(html);
+    w.document.close();
+
+    // Escuchar mensajes desde el popup
+    const handler = (e) => {
+      if (e.source !== w) return;
+      if (e.data === 'download') { drawAndShare(false); }
+    };
+    window.addEventListener('message', handler);
+    // Limpiar listener cuando se cierra el popup
+    const check = setInterval(() => { if (w.closed) { window.removeEventListener('message', handler); clearInterval(check); } }, 1000);
+  };
+
   return (
     <div>
+      {/* ALERTAS DE VENCIMIENTOS */}
+      <div style={{ marginBottom: 24, border: `1.5px solid ${alertas.length > 0 ? '#e8334a' : '#1e2e6a'}`, borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ background: alertas.length > 0 ? 'rgba(232,51,74,0.15)' : 'rgba(30,46,106,0.4)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>{alertas.length > 0 ? '🔔' : '✅'}</span>
+          <span style={{ fontWeight: 700, color: alertas.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
+            {alertas.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
+          </span>
+          {alertas.length > 0 && (
+            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertas.length}</span>
+          )}
+        </div>
+        {alertas.length > 0 && (
+          <div style={{ padding: '8px 0' }}>
+            {alertas.map((a, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: a.bg, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>{labelDia(a.diffDias)}</div>
+                <div style={{ minWidth: 120, fontSize: 12, color: a.color, fontWeight: 600 }}>{a.tipo}</div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>{a.cliente}</span>
+                  {a.ventaId && <span style={{ marginLeft: 8, fontSize: 11, color: '#3a4a80', fontFamily: 'monospace' }}>{a.ventaId}</span>}
+                  <span style={{ marginLeft: 8, fontSize: 12, color: '#7080b0' }}>{a.servicio}</span>
+                </div>
+                <div style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, fontFamily: 'monospace' }}>{a.esCumple ? fmtFecha(a.fecha) : fmtFechaCompleta(a.fecha)}</div>
+                {a.esCumple && (
+                  <button onClick={() => generarTarjetaCumple(a)} title="Ver tarjeta y enviar por WhatsApp"
+                    style={{ background: 'linear-gradient(135deg,#e85c7a,#c03060)', border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    🎂 Tarjeta
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
         {stats.map((s, i) => (
           <div key={i} style={S.statCard}>
@@ -38229,40 +38523,6 @@ function Dashboard({ quotes, payments, passengers }) {
             <div style={{ fontSize: 11, color: "#3a4a80", fontFamily: "system-ui", marginTop: 8 }}>{s.sub}</div>
           </div>
         ))}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div style={S.card}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#e8334a", marginBottom: 16 }}>Últimas Cotizaciones</h3>
-          <table style={S.table}>
-            <thead><tr>{["Cliente", "Destino", "Total", "Estado"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {initialQuotes.map(q => (
-                <tr key={q.id}>
-                  <td style={S.td}>{q.client}</td>
-                  <td style={S.td}>{q.destination}</td>
-                  <td style={{ ...S.td, color: "#e8334a", fontWeight: 700 }}>${q.total.toLocaleString()}</td>
-                  <td style={S.td}><span style={S.badge(q.status === "Confirmada" ? "green" : q.status === "Pendiente" ? "yellow" : "blue")}>{q.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={S.card}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#e8334a", marginBottom: 16 }}>Pagos Recientes</h3>
-          <table style={S.table}>
-            <thead><tr>{["Cliente", "Monto", "Método", "Estado"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {initialPayments.map(p => (
-                <tr key={p.id}>
-                  <td style={S.td}>{p.client}</td>
-                  <td style={{ ...S.td, color: "#e8334a", fontWeight: 700 }}>${p.amount.toLocaleString()}</td>
-                  <td style={S.td}>{p.method}</td>
-                  <td style={S.td}><span style={S.badge(p.status === "Pagado" ? "green" : "yellow")}>{p.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   );
@@ -38907,7 +39167,12 @@ function PassengersModule({ passengers, setPassengers }) {
   });
 
   const handleAdd = () => {
-    const newP = { ...form, id: Date.now(), trips: Number(form.trips), totalSpent: Number(form.totalSpent) };
+    // ID correlativo: máximo ID numérico real (< 10.000.000) + 1
+    const maxId = passengers.reduce((max, p) => {
+      const n = typeof p.id === 'number' && p.id < 10000000 ? p.id : 0;
+      return n > max ? n : max;
+    }, 0);
+    const newP = { ...form, id: maxId + 1, trips: Number(form.trips), totalSpent: Number(form.totalSpent) };
     const updated = [...passengers, newP];
     setPassengers(updated);
     setShowModal(false);
@@ -38985,7 +39250,20 @@ function PassengersModule({ passengers, setPassengers }) {
                 <td style={S.td}>{p.birthdate || "—"}</td>
                 <td style={S.td}>{p.nationality || "—"}</td>
                 <td style={S.td}>{p.visaUSA ? <span style={S.badge("green")}>🇺🇸 Sí</span> : <span style={{ color: "#3a4a80", fontSize: 11, fontFamily: "system-ui" }}>No</span>}</td>
-                <td style={S.td}><button style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }} onClick={() => openProfile(p)}>Ver</button></td>
+                <td style={S.td}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button
+                      title={p.alertaCumple ? "Quitar alerta de cumpleaños" : "Activar alerta de cumpleaños"}
+                      style={{ background: "none", border: `1px solid ${p.alertaCumple ? '#f472b6' : '#1e2e6a'}`, borderRadius: 6, padding: "3px 7px", cursor: "pointer", fontSize: 14, color: p.alertaCumple ? '#f472b6' : '#3a4a80', transition: "all .15s" }}
+                      onClick={() => {
+                        const updated = passengers.map(x => x.id === p.id ? { ...x, alertaCumple: !x.alertaCumple } : x);
+                        setPassengers(updated);
+                        try { localStorage.setItem('atd_passengers', JSON.stringify(updated)); SB.saveBlob('ventas','atd_passengers',updated); } catch {}
+                      }}
+                    >{p.alertaCumple ? '🔔' : '🔕'}</button>
+                    <button style={{ ...S.btn("ghost"), padding: "4px 10px", fontSize: 11 }} onClick={() => openProfile(p)}>Ver</button>
+                  </div>
+                </td>
               </tr>
             ))}
             {filteredPassengers.length > 100 && (
@@ -39417,32 +39695,41 @@ function ClientSearch({ value, onChange, onSelect }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSugg, setShowSugg] = useState(false);
 
+  // Busca siempre en localStorage (datos vivos), con fallback a initialPassengers
+  const getAllPax = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      return stored.length > 0 ? stored : initialPassengers;
+    } catch { return initialPassengers; }
+  };
+
   const handleChange = (val) => {
     setQuery(val);
     onChange(val);
     if (val.length < 2) { setSuggestions([]); setShowSugg(false); return; }
     const isNum = /^\d+$/.test(val.trim());
-    const results = initialPassengers.filter(p =>
-      isNum
+    const allPax = getAllPax();
+    const results = allPax.filter(p => {
+      const nombre = p.name || p.nombre || '';
+      return isNum
         ? String(p.id).startsWith(val.trim())
-        : p.name.toLowerCase().includes(val.toLowerCase())
-    ).slice(0, 8);
+        : nombre.toLowerCase().includes(val.toLowerCase());
+    }).slice(0, 8);
     setSuggestions(results);
     setShowSugg(results.length > 0);
   };
 
   const handleSelect = (p) => {
-    // Try to get full passenger data from localStorage
+    // Buscar el objeto completo en localStorage por id
     try {
       const stored = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
-      const full = stored.find(x => x.id === p.id);
-      const finalP = full || p;
-      setQuery(finalP.name);
+      const full = stored.find(x => x.id === p.id) || p;
+      setQuery(full.name || full.nombre || '');
       setSuggestions([]);
       setShowSugg(false);
-      onSelect(finalP);
+      onSelect(full);
     } catch {
-      setQuery(p.name);
+      setQuery(p.name || p.nombre || '');
       setSuggestions([]);
       setShowSugg(false);
       onSelect(p);
@@ -39591,6 +39878,7 @@ function QuotesModule({ quotes, setQuotes, passengers, setPassengers }) {
                       {["Pendiente", "En revisión", "Confirmada", "Cancelada"].map(s => <option key={s}>{s}</option>)}
                     </select>
                     <button style={{ ...S.btn('ghost'), padding: '4px 10px', fontSize: 11, whiteSpace: 'nowrap' }} onClick={() => setDetailQuote(q)}>Ver</button>
+                    <button style={{ ...S.btn('danger'), padding: '4px 8px', fontSize: 11 }} onClick={() => { if (window.confirm(`¿Eliminar cotización de ${q.client}?`)) { const upd = quotes.filter(x => x.id !== q.id); setQuotes(upd); try { localStorage.setItem('atd_quotes', JSON.stringify(upd)); SB.saveBlob('ventas','atd_quotes',upd); } catch {} } }}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -41200,28 +41488,87 @@ function PaymentsModule({ payments, setPayments }) {
 function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments, setGlobalPayments }) {
   const [tab, setTab] = useState("general");
 
-  // Merge global payments into venta on open
+  // La venta es la fuente de verdad — no mergeamos desde atd_payments para evitar re-inyectar cobros eliminados
   const safePay = (p) => ({ ...p, monto: Number(p.monto || p.amount || 0), amount: Number(p.amount || p.monto || 0) });
 
-  const mergeGlobalPayments = (v) => {
-    if (!v.ventaId) return v;
+  // Enriquece pasajeros de la venta con datos completos de atd_passengers (por nombre o paxId)
+  const enrichPasajeros = (pasajeros) => {
     try {
-      const storedPays = JSON.parse(localStorage.getItem('atd_payments') || '[]');
-      const globalPays = (globalPayments && globalPayments.length > 0 ? globalPayments : storedPays).map(safePay);
-      const matching = globalPays.filter(p => p.ventaId === v.ventaId).map(safePay);
-      const globalCobros = matching.filter(p => p.tipo !== 'proveedor');
-      const globalPagos = matching.filter(p => p.tipo === 'proveedor');
-      const existingCobroIds = new Set((v.cobros || []).map(c => c.id));
-      const existingPagoIds = new Set((v.pagos || []).map(p => p.id));
-      const newCobros = [...(v.cobros || []).map(safePay), ...globalCobros.filter(c => !existingCobroIds.has(c.id))];
-      const newPagos = [...(v.pagos || []).map(safePay), ...globalPagos.filter(p => !existingPagoIds.has(p.id))];
-      return { ...v, cobros: newCobros, pagos: newPagos };
-    } catch(e) { console.error("mergeGlobalPayments error:", e); return v; }
+      const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+      return (pasajeros || []).map(p => {
+        // Si ya tiene DNI y nacimiento, no tocar
+        if (p.dni && p.nacimiento) return p;
+        const match = allPax.find(x =>
+          (p.paxId && x.id === p.paxId) ||
+          (p.nombre && (x.name || '').toLowerCase() === p.nombre.toLowerCase()) ||
+          (p.mail && x.email && x.email.toLowerCase() === p.mail.toLowerCase())
+        );
+        if (!match) return p;
+        return {
+          ...p,
+          tipoDoc: p.tipoDoc || match.tipoDoc || 'DNI',
+          dni: p.dni || match.dni || '',
+          nacimiento: p.nacimiento || match.birthdate || match.nacimiento || '',
+          emision: p.emision || match.docEmision || '',
+          expiracion: p.expiracion || match.docExpiracion || '',
+          mail: p.mail || match.email || '',
+          telefono: p.telefono || match.phone || '',
+          visaUSA: p.visaUSA || match.visaUSA || false,
+          visaNumero: p.visaNumero || match.visaNumero || '',
+          visaTipo: p.visaTipo || match.visaTipo || '',
+          visaEmision: p.visaEmision || match.visaEmision || '',
+          visaExpiracion: p.visaExpiracion || match.visaExpiracion || '',
+          visaEntradas: p.visaEntradas || match.visaEntradas || '',
+          paxId: p.paxId || match.id,
+        };
+      });
+    } catch { return pasajeros || []; }
   };
 
-  const [data, setData] = useState(() => mergeGlobalPayments(venta));
-  // Re-merge whenever venta changes (e.g. after sync)
-  useEffect(() => { setData(mergeGlobalPayments(venta)); }, [venta.id]);
+  const safeVenta = (v) => {
+    let pasajeros = enrichPasajeros(v.pasajeros);
+    // Si el titular no está en la lista, buscarlo en atd_passengers y agregarlo primero
+    const titularNombre = (v.cliente || '').toLowerCase().trim();
+    const titularEnLista = pasajeros.some(p => (p.nombre || '').toLowerCase().trim() === titularNombre);
+    if (!titularEnLista && titularNombre) {
+      try {
+        const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const match = allPax.find(x => (x.name || '').toLowerCase().trim() === titularNombre);
+        if (match) {
+          pasajeros = [{
+            id: Date.now() + 10,
+            nombre: match.name || v.cliente,
+            tipoDoc: match.tipoDoc || 'DNI',
+            dni: match.dni || '',
+            nacimiento: match.birthdate || match.nacimiento || '',
+            emision: match.docEmision || '',
+            expiracion: match.docExpiracion || '',
+            mail: match.email || v.clienteEmail || '',
+            telefono: match.phone || v.clientePhone || '',
+            visaUSA: match.visaUSA || false,
+            visaNumero: match.visaNumero || '',
+            visaTipo: match.visaTipo || '',
+            visaEmision: match.visaEmision || '',
+            visaExpiracion: match.visaExpiracion || '',
+            visaEntradas: match.visaEntradas || '',
+            docAdj: null,
+            paxId: match.id,
+          }, ...pasajeros];
+        }
+      } catch {}
+    }
+    return { ...v, cobros: (v.cobros||[]).map(safePay), pagos: (v.pagos||[]).map(safePay), pasajeros };
+  };
+
+  const [data, setData] = useState(() => safeVenta(venta));
+  useEffect(() => {
+    const enriched = safeVenta(venta);
+    setData(enriched);
+    // Si se agregó el titular automáticamente, persistir el cambio
+    if ((enriched.pasajeros||[]).length > (venta.pasajeros||[]).length) {
+      onUpdate(enriched);
+    }
+  }, [venta.id]);
   const [newPax, setNewPax] = useState({ nombre: "", dni: "", tipoDoc: "DNI", emision: "", expiracion: "", nacimiento: "", mail: "", telefono: "", visaUSA: false, visaNumero: "", visaTipo: "", visaEmision: "", visaExpiracion: "", visaEntradas: "", docAdj: null });
   const [newSvc, setNewSvc] = useState({ tipo: "Vuelo", descripcion: "", precio: "", neto: "", proveedor: "", moneda: "USD", incluido: true });
   const [tcambio, setTcambio] = useState(() => { try { return Number(localStorage.getItem('atd_tcambio') || 0); } catch { return 0; } });
@@ -41258,7 +41605,17 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
     pushToGlobalPayments(cobro);
     setNewCobro({ fecha: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Recibido" });
   };
-  const removeCobro = (id) => update({ cobros: (data.cobros || []).filter(c => c.id !== id) });
+  const removeCobro = (id) => {
+    update({ cobros: (data.cobros || []).filter(c => c.id !== id) });
+    // Also purge from global atd_payments so mergeGlobalPayments doesn't re-inject it
+    try {
+      const prev = JSON.parse(localStorage.getItem('atd_payments') || '[]');
+      const updated = prev.filter(p => p.id !== id);
+      localStorage.setItem('atd_payments', JSON.stringify(updated));
+      SB.saveBlob('ventas', 'atd_payments', updated).catch(() => {});
+      if (setGlobalPayments) setGlobalPayments(updated);
+    } catch(e) { console.error("removeCobro global purge:", e); }
+  };
 
   const addPago = () => {
     if (!newPago.monto) return;
@@ -41276,7 +41633,17 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
     pushToGlobalPayments(pago);
     setNewPago({ fecha: "", proveedor: "", monto: "", moneda: "USD", metodo: "Transferencia", concepto: "", estado: "Pagado" });
   };
-  const removePago = (id) => update({ pagos: (data.pagos || []).filter(p => p.id !== id) });
+  const removePago = (id) => {
+    update({ pagos: (data.pagos || []).filter(p => p.id !== id) });
+    // Also purge from global atd_payments so mergeGlobalPayments doesn't re-inject it
+    try {
+      const prev = JSON.parse(localStorage.getItem('atd_payments') || '[]');
+      const updated = prev.filter(p => p.id !== id);
+      localStorage.setItem('atd_payments', JSON.stringify(updated));
+      SB.saveBlob('ventas', 'atd_payments', updated).catch(() => {});
+      if (setGlobalPayments) setGlobalPayments(updated);
+    } catch(e) { console.error("removePago global purge:", e); }
+  };
 
   const generateReciboVenta = (p) => {
     const esProveedor = p.tipo === "proveedor";
@@ -41591,11 +41958,21 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                     onChange={() => {}}
                     onSelect={p => {
                       setNewPax({
-                        nombre: p.name || "", tipoDoc: p.tipoDoc || "DNI", dni: p.dni || "",
-                        nacimiento: p.birthdate || "", emision: p.docEmision || "", expiracion: p.docExpiracion || "",
-                        mail: p.email || "", telefono: p.phone || "", docAdj: null,
-                        visaUSA: p.visaUSA || false, visaNumero: p.visaNumero || "", visaTipo: p.visaTipo || "",
-                        visaEntradas: p.visaEntradas || "", visaEmision: p.visaEmision || "", visaExpiracion: p.visaExpiracion || ""
+                        nombre: p.name || p.nombre || "",
+                        tipoDoc: p.tipoDoc || "DNI",
+                        dni: p.dni || "",
+                        nacimiento: p.birthdate || p.nacimiento || "",
+                        emision: p.docEmision || p.emision || "",
+                        expiracion: p.docExpiracion || p.expiracion || p.passport_expiry || "",
+                        mail: p.email || p.mail || "",
+                        telefono: p.phone || p.telefono || "",
+                        docAdj: null,
+                        visaUSA: p.visaUSA || false,
+                        visaNumero: p.visaNumero || p.visaNumber || "",
+                        visaTipo: p.visaTipo || "",
+                        visaEntradas: p.visaEntradas || "",
+                        visaEmision: p.visaEmision || "",
+                        visaExpiracion: p.visaExpiracion || "",
                       });
                     }}
                   />
@@ -42390,26 +42767,26 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
     try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { return []; }
   });
 
-  // Load from Supabase on mount + auto-assign ventaId
+  // Load on mount: localStorage is source of truth. Supabase only used as fallback when local is empty.
   useEffect(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      if (local.length > 0) {
+        // Local data exists — prefer it and fix any missing ventaIds
+        const fixed = local.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
+        setVentas(fixed);
+        localStorage.setItem(storageKey, JSON.stringify(fixed));
+        return; // do NOT overwrite with potentially stale Supabase data
+      }
+    } catch {}
+    // Local is empty — fall back to Supabase
     SB.loadBlob('ventas', storageKey).then(data => {
       if (data && Array.isArray(data) && data.length > 0) {
-        // Auto-assign ventaId to any without one
         const fixed = data.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
         setVentas(fixed);
         try { localStorage.setItem(storageKey, JSON.stringify(fixed)); } catch {}
-      } else {
-        // Also fix localStorage data
-        try {
-          const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
-          if (local.length > 0) {
-            const fixed = local.map((v, i) => v.ventaId ? v : { ...v, ventaId: `VTA-2026-${String(i+1).padStart(3,'0')}` });
-            setVentas(fixed);
-            localStorage.setItem(storageKey, JSON.stringify(fixed));
-          }
-        } catch {}
       }
-    });
+    }).catch(() => {});
   }, [storageKey]);
   const [showModal, setShowModal] = useState(false);
   const [tipoNueva, setTipoNueva] = useState(null); // "directa" | "cotizacion"
@@ -42444,14 +42821,57 @@ function VentasModule({ mes, globalPayments, setGlobalPayments, passengers, setP
       }
     }
 
-    // Auto-add cliente as first pasajero
-    const titularPax = form.cliente ? [{
-      id: Date.now() + 10,
-      nombre: form.cliente,
-      tipoDoc: "DNI", dni: "", nacimiento: "", emision: "", expiracion: "",
-      mail: form.clienteEmail || "", telefono: form.clientePhone || "",
-      visaUSA: false, docAdj: null
-    }] : [];
+    // Auto-add cliente as first pasajero — busca datos completos en atd_passengers
+    let titularPax = [];
+    if (form.cliente) {
+      try {
+        const allPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]');
+        const match = allPax.find(p =>
+          (p.name || '').toLowerCase() === form.cliente.toLowerCase() ||
+          (form.clienteEmail && (p.email || '').toLowerCase() === form.clienteEmail.toLowerCase()) ||
+          (form.clientId && String(p.id) === String(form.clientId))
+        );
+        if (match) {
+          // Pasajero existente: copiar todos sus datos al formato de venta
+          titularPax = [{
+            id: Date.now() + 10,
+            nombre: match.name || form.cliente,
+            tipoDoc: match.tipoDoc || 'DNI',
+            dni: match.dni || '',
+            nacimiento: match.birthdate || match.nacimiento || '',
+            emision: match.docEmision || match.emision || '',
+            expiracion: match.docExpiracion || match.expiracion || '',
+            mail: match.email || form.clienteEmail || '',
+            telefono: match.phone || form.clientePhone || '',
+            visaUSA: match.visaUSA || false,
+            visaNumero: match.visaNumero || '',
+            visaTipo: match.visaTipo || '',
+            visaEmision: match.visaEmision || '',
+            visaExpiracion: match.visaExpiracion || '',
+            visaEntradas: match.visaEntradas || '',
+            docAdj: null,
+            paxId: match.id, // referencia al ID global
+          }];
+        } else {
+          // Pasajero nuevo: datos básicos del formulario
+          titularPax = [{
+            id: Date.now() + 10,
+            nombre: form.cliente,
+            tipoDoc: 'DNI', dni: '', nacimiento: '', emision: '', expiracion: '',
+            mail: form.clienteEmail || '', telefono: form.clientePhone || '',
+            visaUSA: false, docAdj: null,
+          }];
+        }
+      } catch {
+        titularPax = [{
+          id: Date.now() + 10,
+          nombre: form.cliente,
+          tipoDoc: 'DNI', dni: '', nacimiento: '', emision: '', expiracion: '',
+          mail: form.clienteEmail || '', telefono: form.clientePhone || '',
+          visaUSA: false, docAdj: null,
+        }];
+      }
+    }
 
     save([...ventas, { ...form, id: Date.now(), ventaId, monto: Number(form.monto), pasajeros: titularPax, servicios: [], adjuntos: [], cobros: [], pagos: [] }]);
     setForm({ fecha: "", cliente: "", destino: "", servicio: "", monto: "", metodo: "Transferencia", estado: "Confirmada", notas: "", cotizacionRef: "", clienteEmail: "", clientePhone: "", showNewPax: false });
