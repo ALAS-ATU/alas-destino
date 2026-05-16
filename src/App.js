@@ -44157,16 +44157,7 @@ export default function App() {
     setSyncing(true);
     setSyncMsg("Subiendo datos...");
     try {
-      const keys = [
-        ['atd_quotes', quotes],
-        ['atd_payments', payments],
-        ['atd_destinations', null],
-        ['atd_providers', null],
-        ['atd_services', null],
-        ['atd_caja', null],
-        ['atd_gastos_fijos', null],
-      ];
-      // Also grab ventas from localStorage
+      // Ventas por mes
       const meses = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
       for (const mes of meses) {
         const key = `ventas_2026_${mes}`;
@@ -44175,17 +44166,26 @@ export default function App() {
           if (data.length > 0) await SB.saveBlob('ventas', key, data);
         } catch {}
       }
-      // Sync main collections
+      // Colecciones principales
       await SB.saveBlob('ventas', 'atd_quotes', quotes);
       await SB.saveBlob('ventas', 'atd_payments', payments);
       try { const d = JSON.parse(localStorage.getItem('atd_destinations') || "[]"); await SB.saveBlob('ventas', 'atd_destinations', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_providers') || "[]"); await SB.saveBlob('ventas', 'atd_providers', d); } catch {}
       try { const d = JSON.parse(localStorage.getItem('atd_services') || "{}"); await SB.saveBlob('ventas', 'atd_services', d); } catch {}
-      // Sync only passengers with active ventas for portal
+      try { const d = JSON.parse(localStorage.getItem('atd_caja') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_caja', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_gastos_fijos') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_gastos_fijos', d); } catch {}
+      // Pasajeros completos
+      try { const d = JSON.parse(localStorage.getItem('atd_passengers') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_passengers', d); } catch {}
+      // Ciudades y aerolíneas personalizadas
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_cities') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_cities', d); } catch {}
+      try { const d = JSON.parse(localStorage.getItem('atd_custom_airlines') || "[]"); if (d.length > 0) await SB.saveBlob('ventas', 'atd_custom_airlines', d); } catch {}
+      // Alertas done
+      try { const d = JSON.parse(localStorage.getItem('atd_alertas_done') || "[]"); await SB.saveBlob('ventas', 'atd_alertas_done', d); } catch {}
+      // Subset de pasajeros para Portal del Pasajero
       try {
         const ventaEmails = new Set();
         const ventaNames = new Set();
-        ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"].forEach(m => {
+        meses.forEach(m => {
           try {
             const vs = JSON.parse(localStorage.getItem("ventas_2026_" + m) || "[]");
             vs.forEach(v => {
@@ -44199,9 +44199,7 @@ export default function App() {
           (p.email && ventaEmails.has(p.email.toLowerCase())) ||
           (p.name && ventaNames.has(p.name.toLowerCase()))
         );
-        if (paxPortal.length > 0) {
-          await SB.saveBlob('ventas', 'atd_passengers_portal', paxPortal);
-        }
+        if (paxPortal.length > 0) await SB.saveBlob('ventas', 'atd_passengers_portal', paxPortal);
       } catch(e) { console.error("pax portal sync error:", e); }
 
       setSyncMsg("✓ Sincronizado");
@@ -44217,15 +44215,36 @@ export default function App() {
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
+        // Quotes
         const qData = await SB.loadBlob('ventas', 'atd_quotes');
-        if (qData && Array.isArray(qData) && qData.length > 0) {
-          setQuotes(qData);
-          localStorage.setItem('atd_quotes', JSON.stringify(qData));
-        }
+        if (qData && Array.isArray(qData) && qData.length > 0) { setQuotes(qData); localStorage.setItem('atd_quotes', JSON.stringify(qData)); }
+        // Payments
         const pData = await SB.loadBlob('ventas', 'atd_payments');
-        if (pData && Array.isArray(pData) && pData.length > 0) {
-          setPayments(pData);
-          localStorage.setItem('atd_payments', JSON.stringify(pData));
+        if (pData && Array.isArray(pData) && pData.length > 0) { setPayments(pData); localStorage.setItem('atd_payments', JSON.stringify(pData)); }
+        // Providers
+        const provData = await SB.loadBlob('ventas', 'atd_providers');
+        if (provData && Array.isArray(provData) && provData.length > 0) localStorage.setItem('atd_providers', JSON.stringify(provData));
+        // Destinations
+        const destData = await SB.loadBlob('ventas', 'atd_destinations');
+        if (destData && Array.isArray(destData) && destData.length > 0) localStorage.setItem('atd_destinations', JSON.stringify(destData));
+        // Passengers
+        const paxData = await SB.loadBlob('ventas', 'atd_passengers');
+        if (paxData && Array.isArray(paxData) && paxData.length > 0) { setPassengers(paxData); localStorage.setItem('atd_passengers', JSON.stringify(paxData)); }
+        // Custom cities & airlines
+        const citData = await SB.loadBlob('ventas', 'atd_custom_cities');
+        if (citData && Array.isArray(citData) && citData.length > 0) localStorage.setItem('atd_custom_cities', JSON.stringify(citData));
+        const airData = await SB.loadBlob('ventas', 'atd_custom_airlines');
+        if (airData && Array.isArray(airData) && airData.length > 0) localStorage.setItem('atd_custom_airlines', JSON.stringify(airData));
+        // Alertas done
+        const doneData = await SB.loadBlob('ventas', 'atd_alertas_done');
+        if (doneData && Array.isArray(doneData) && doneData.length > 0) localStorage.setItem('atd_alertas_done', JSON.stringify(doneData));
+        // Ventas por mes
+        const meses = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        for (const mes of meses) {
+          try {
+            const vData = await SB.loadBlob('ventas', `ventas_2026_${mes}`);
+            if (vData && Array.isArray(vData) && vData.length > 0) localStorage.setItem(`ventas_2026_${mes}`, JSON.stringify(vData));
+          } catch {}
         }
       } catch(e) { console.error("Supabase load error:", e); }
       setSbReady(true);
