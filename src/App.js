@@ -610,6 +610,321 @@ Object.entries(DESTINATIONS_DB).forEach(([continent, countries]) => {
   });
 });
 
+// Mapa IATA → { ciudad, país }
+const IATA_MAP = {
+  // Argentina
+  BUE:'Buenos Aires', AEP:'Buenos Aires (Aeroparque)', EZE:'Buenos Aires (Ezeiza)',
+  COR:'Córdoba', ROS:'Rosario', MDZ:'Mendoza', SLA:'Salta', BRC:'Bariloche',
+  USH:'Ushuaia', IGR:'Puerto Iguazú', MDQ:'Mar del Plata', TUC:'Tucumán',
+  NQN:'Neuquén', CRD:'Comodoro Rivadavia', PMY:'Puerto Madryn', BHI:'Bahía Blanca',
+  REL:'Trelew', RGL:'Río Gallegos', LGS:'Malargüe', JUJ:'Jujuy', CTC:'Catamarca',
+  // Brasil
+  GRU:'São Paulo (Guarulhos)', CGH:'São Paulo (Congonhas)', VCP:'São Paulo (Campinas)',
+  GIG:'Río de Janeiro (Galeão)', SDU:'Río de Janeiro (Santos Dumont)',
+  SSA:'Salvador', FOR:'Fortaleza', FLN:'Florianópolis', REC:'Recife',
+  NAT:'Natal', MCZ:'Maceió', POA:'Porto Alegre', MAO:'Manaos', BEL:'Belém',
+  BSB:'Brasilia', IGU:'Foz do Iguaçu',
+  // Resto Sudamérica
+  SCL:'Santiago', ANF:'Antofagasta', PMC:'Puerto Montt', IQQ:'Iquique', CCP:'Concepción',
+  MVD:'Montevideo', ASU:'Asunción', LIM:'Lima', BOG:'Bogotá', MDE:'Medellín',
+  CLO:'Cali', CTG:'Cartagena', UIO:'Quito', GYE:'Guayaquil', LPB:'La Paz',
+  VVI:'Santa Cruz de la Sierra', CCS:'Caracas', PMV:'Isla Margarita',
+  // México y Caribe
+  CUN:'Cancún', MEX:'Ciudad de México', GDL:'Guadalajara', SJO:'San José (CR)',
+  HAV:'La Habana', PUJ:'Punta Cana', SDQ:'Santo Domingo', SJU:'San Juan (PR)',
+  MBJ:'Montego Bay', BGI:'Bridgetown', UVF:'Santa Lucía',
+  // EE.UU.
+  MIA:'Miami', MCO:'Orlando', JFK:'Nueva York (JFK)', EWR:'Nueva York (Newark)',
+  LGA:'Nueva York (LaGuardia)', LAX:'Los Ángeles', LAS:'Las Vegas', ORD:'Chicago',
+  SFO:'San Francisco', BOS:'Boston', IAD:'Washington D.C.', MSY:'Nueva Orleans',
+  SEA:'Seattle', ATL:'Atlanta', DFW:'Dallas', DEN:'Denver', HOU:'Houston',
+  // Europa
+  MAD:'Madrid', BCN:'Barcelona', AGP:'Málaga', PMI:'Palma de Mallorca', VLC:'Valencia',
+  BIO:'Bilbao', SVQ:'Sevilla', LIS:'Lisboa', OPO:'Oporto', LHR:'Londres (Heathrow)',
+  LGW:'Londres (Gatwick)', STN:'Londres (Stansted)', CDG:'París (CDG)', ORY:'París (Orly)',
+  AMS:'Ámsterdam', FRA:'Frankfurt', MUC:'Múnich', DUS:'Düsseldorf', BER:'Berlín',
+  VIE:'Viena', ZRH:'Zúrich', GVA:'Ginebra', FCO:'Roma (Fiumicino)', CIA:'Roma (Ciampino)',
+  MXP:'Milán (Malpensa)', LIN:'Milán (Linate)', VCE:'Venecia', NAP:'Nápoles',
+  FLR:'Florencia', BLQ:'Bolonia', CTA:'Catania', PMO:'Palermo', ATH:'Atenas',
+  SKG:'Tesalónica', HER:'Heraklion', IST:'Estambul', SAW:'Estambul (Sabiha)',
+  SVO:'Moscú', BRU:'Bruselas', CPH:'Copenhague', ARN:'Estocolmo', HEL:'Helsinki',
+  OSL:'Oslo', WAW:'Varsovia', PRG:'Praga', BUD:'Budapest', OTP:'Bucarest',
+  // Medio Oriente y Asia
+  DXB:'Dubái', AUH:'Abu Dhabi', DOH:'Doha', TLV:'Tel Aviv',
+  BKK:'Bangkok', SIN:'Singapur', KUL:'Kuala Lumpur', HKG:'Hong Kong',
+  NRT:'Tokio (Narita)', HND:'Tokio (Haneda)', ICN:'Seúl', PEK:'Pekín', PVG:'Shanghái',
+  SYD:'Sídney', MEL:'Melbourne', AKL:'Auckland',
+  // África
+  CAI:'El Cairo', JNB:'Johannesburgo', CPT:'Ciudad del Cabo', NBO:'Nairobi',
+  CMN:'Casablanca', TUN:'Túnez', ALG:'Argel',
+};
+
+// Componente buscador de aeropuerto/ciudad para itinerario de vuelo
+function CiudadAeropuertoSearch({ value, onChange, placeholder }) {
+  const [texto, setTexto] = useState(value || '');
+  const [abierto, setAbierto] = useState(false);
+  const [opciones, setOpciones] = useState([]);
+  const [noEncontrado, setNoEncontrado] = useState(false);
+  const refInput = { current: null };
+
+  // Cargar ciudades custom del localStorage
+  const getCiudadesCustom = () => {
+    try { return JSON.parse(localStorage.getItem('atd_custom_cities') || '[]'); } catch { return []; }
+  };
+
+  const buscar = (q) => {
+    if (!q || q.trim().length < 1) { setOpciones([]); setNoEncontrado(false); setAbierto(false); return; }
+    const qn = q.trim().toLowerCase();
+    const resultados = [];
+
+    // 1. Buscar por código IATA exacto (mayúsculas)
+    const iataExacto = q.trim().toUpperCase();
+    if (IATA_MAP[iataExacto]) {
+      resultados.push({ label: `${iataExacto} — ${IATA_MAP[iataExacto]}`, valor: iataExacto, badge: 'IATA', prioridad: 0 });
+    }
+    // 2. Buscar IATA que contenga el texto
+    Object.entries(IATA_MAP).forEach(([codigo, ciudad]) => {
+      if (codigo.toLowerCase().includes(qn) || ciudad.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.valor === codigo)) {
+          resultados.push({ label: `${codigo} — ${ciudad}`, valor: codigo, badge: 'IATA', prioridad: 1 });
+        }
+      }
+    });
+    // 3. Buscar en ciudades del DESTINATIONS_DB
+    ALL_CITIES.forEach(({ city, country }) => {
+      if (city.toLowerCase().includes(qn) || country.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.label.includes(city))) {
+          resultados.push({ label: `${city}`, sub: country, valor: city, badge: 'Destino', prioridad: 2 });
+        }
+      }
+    });
+    // 4. Ciudades custom
+    getCiudadesCustom().forEach(c => {
+      if (c.nombre.toLowerCase().includes(qn)) {
+        if (!resultados.find(r => r.valor === c.nombre)) {
+          resultados.push({ label: c.nombre, sub: c.pais || '', valor: c.nombre, badge: '★ Custom', prioridad: 3 });
+        }
+      }
+    });
+
+    resultados.sort((a, b) => a.prioridad - b.prioridad);
+    setOpciones(resultados.slice(0, 12));
+    setNoEncontrado(resultados.length === 0);
+    setAbierto(true);
+  };
+
+  const seleccionar = (opcion) => {
+    setTexto(opcion.valor);
+    onChange(opcion.valor);
+    setAbierto(false);
+    setOpciones([]);
+    setNoEncontrado(false);
+  };
+
+  const agregarCiudad = () => {
+    const nombre = texto.trim();
+    if (!nombre) return;
+    const custom = getCiudadesCustom();
+    if (!custom.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+      const nueva = { nombre, pais: 'Personalizado', continente: 'Otros' };
+      const actualizado = [...custom, nueva];
+      localStorage.setItem('atd_custom_cities', JSON.stringify(actualizado));
+      // También agregar a ALL_CITIES en memoria
+      if (!ALL_CITIES.find(c => c.city.toLowerCase() === nombre.toLowerCase())) {
+        ALL_CITIES.push({ city: nombre, country: 'Personalizado', continent: 'Otros' });
+      }
+    }
+    onChange(nombre);
+    setAbierto(false);
+    setNoEncontrado(false);
+  };
+
+  const badgeColor = (b) => b === 'IATA' ? '#60a5fa' : b === '★ Custom' ? '#fbbf24' : '#4ade80';
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        style={{ background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '6px 10px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }}
+        value={texto}
+        placeholder={placeholder || 'BUE, Salvador, Madrid...'}
+        onChange={e => { setTexto(e.target.value); onChange(e.target.value); buscar(e.target.value); }}
+        onFocus={e => { if (texto) buscar(texto); }}
+        onBlur={() => setTimeout(() => { setAbierto(false); setNoEncontrado(false); }, 180)}
+      />
+      {(abierto && (opciones.length > 0 || noEncontrado)) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 2, maxHeight: 260, overflowY: 'auto' }}>
+          {opciones.map((op, i) => (
+            <div key={i} onMouseDown={() => seleccionar(op)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.12)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 10, background: `rgba(${badgeColor(op.badge).replace('#','')},0.15)`, color: badgeColor(op.badge), borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', minWidth: 38, textAlign: 'center' }}>{op.badge}</span>
+              <span style={{ fontSize: 13, color: '#c8d4f0', fontWeight: 600 }}>{op.label}</span>
+              {op.sub && <span style={{ fontSize: 11, color: '#5060a0', marginLeft: 2 }}>{op.sub}</span>}
+            </div>
+          ))}
+          {noEncontrado && (
+            <div style={{ padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 8 }}>
+                "{texto}" no está en la base de destinos
+              </div>
+              <button onMouseDown={agregarCiudad}
+                style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 6, padding: '5px 12px', color: '#4ade80', fontSize: 12, fontFamily: 'system-ui', cursor: 'pointer', fontWeight: 600 }}>
+                ✚ Agregar "{texto}" a Destinos
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Helper: código IATA de ciudad → nombre legible (para Portal del Pasajero)
+const resolverCiudad = (codigo) => {
+  if (!codigo) return '';
+  const enMapa = IATA_MAP[codigo.toUpperCase()];
+  if (enMapa) return `${enMapa} (${codigo.toUpperCase()})`;
+  // Buscar en ALL_CITIES por si es nombre directo
+  const enCities = ALL_CITIES.find(c => c.city.toLowerCase() === codigo.toLowerCase());
+  if (enCities) return enCities.city;
+  // Custom
+  try {
+    const custom = JSON.parse(localStorage.getItem('atd_custom_cities') || '[]');
+    const c = custom.find(x => x.nombre.toLowerCase() === codigo.toLowerCase());
+    if (c) return c.nombre;
+  } catch {}
+  return codigo;
+};
+
+// Mapa IATA de aerolíneas → nombre completo
+const AEROLINEA_MAP = {
+  // Argentina
+  AR:'Aerolíneas Argentinas', AU:'Austral', JA:'JetSMART Argentina', FO:'Flybondi',
+  // Latinoamérica
+  LA:'LATAM Airlines', JJ:'LATAM Brasil', LP:'LATAM Perú', XL:'LATAM Ecuador',
+  CM:'Copa Airlines', AV:'Avianca', VH:'Avianca Honduras', O6:'Avianca Brasil',
+  G3:'GOL Linhas Aéreas', AD:'Azul Linhas Aéreas', P9:'Peruvian Airlines',
+  H6:'Transportes Aéreos Bolivarianos', PZ:'TAM Paraguay', T4:'TACA Regional',
+  '4M':'LATAM Argentina', AM:'Aeroméxico', VB:'VivaAerobus', Y4:'Volaris',
+  // EE.UU.
+  AA:'American Airlines', UA:'United Airlines', DL:'Delta Air Lines',
+  B6:'JetBlue Airways', WN:'Southwest Airlines', NK:'Spirit Airlines',
+  F9:'Frontier Airlines', AS:'Alaska Airlines', HA:'Hawaiian Airlines',
+  // Europa
+  IB:'Iberia', VY:'Vueling', UX:'Air Europa', I2:'Iberia Express',
+  TP:'TAP Air Portugal', AF:'Air France', KL:'KLM', LH:'Lufthansa',
+  BA:'British Airways', EZY:'easyJet', FR:'Ryanair', U2:'easyJet',
+  AZ:'ITA Airways', LX:'Swiss', OS:'Austrian Airlines', SK:'SAS',
+  AY:'Finnair', W6:'Wizz Air', A3:'Aegean Airlines', PS:'Ukraine Intl',
+  SN:'Brussels Airlines', BT:'airBaltic', TK:'Turkish Airlines',
+  // Medio Oriente
+  EK:'Emirates', QR:'Qatar Airways', EY:'Etihad Airways', GF:'Gulf Air',
+  SV:'Saudia', MS:'EgyptAir', RJ:'Royal Jordanian',
+  // Asia/Oceanía
+  SQ:'Singapore Airlines', CX:'Cathay Pacific', JL:'Japan Airlines',
+  NH:'ANA All Nippon', KE:'Korean Air', OZ:'Asiana Airlines',
+  CA:'Air China', MU:'China Eastern', CZ:'China Southern',
+  TG:'Thai Airways', QF:'Qantas', NZ:'Air New Zealand',
+  // África
+  ET:'Ethiopian Airlines', SA:'South African Airways', MS2:'EgyptAir',
+  // Otros / Low cost
+  W2:'FlexFlight', PC:'Pegasus Airlines', VJ:'VietJet Air',
+};
+
+// Componente buscador de aerolínea por código IATA
+function AerolineaSearch({ value, onChange }) {
+  const [texto, setTexto] = useState(value || '');
+  const [abierto, setAbierto] = useState(false);
+  const [opciones, setOpciones] = useState([]);
+  const [noEncontrado, setNoEncontrado] = useState(false);
+
+  const buscar = (q) => {
+    if (!q || q.trim().length < 1) { setOpciones([]); setNoEncontrado(false); setAbierto(false); return; }
+    const qn = q.trim().toLowerCase();
+    const resultados = [];
+    Object.entries(AEROLINEA_MAP).forEach(([codigo, nombre]) => {
+      if (codigo.toLowerCase().includes(qn) || nombre.toLowerCase().includes(qn)) {
+        resultados.push({ codigo, nombre });
+      }
+    });
+    resultados.sort((a, b) => {
+      const ac = a.codigo.toLowerCase().startsWith(qn) ? 0 : 1;
+      const bc = b.codigo.toLowerCase().startsWith(qn) ? 0 : 1;
+      return ac - bc;
+    });
+    setOpciones(resultados.slice(0, 10));
+    setNoEncontrado(resultados.length === 0);
+    setAbierto(true);
+  };
+
+  const seleccionar = (codigo) => {
+    setTexto(codigo);
+    onChange(codigo);
+    setAbierto(false);
+    setOpciones([]);
+    setNoEncontrado(false);
+  };
+
+  const agregarAerolinea = () => {
+    const cod = texto.trim().toUpperCase();
+    if (!cod) return;
+    // Guardar en localStorage como aerolínea custom
+    try {
+      const custom = JSON.parse(localStorage.getItem('atd_custom_airlines') || '{}');
+      if (!custom[cod]) {
+        custom[cod] = cod;
+        localStorage.setItem('atd_custom_airlines', JSON.stringify(custom));
+        AEROLINEA_MAP[cod] = cod;
+      }
+    } catch {}
+    onChange(cod);
+    setAbierto(false);
+    setNoEncontrado(false);
+  };
+
+  const nombreMostrado = (cod) => AEROLINEA_MAP[cod] || cod;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        style={{ background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '6px 10px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }}
+        value={texto}
+        placeholder="AR, LA, AA..."
+        onChange={e => { setTexto(e.target.value); onChange(e.target.value); buscar(e.target.value); }}
+        onFocus={() => { if (texto) buscar(texto); }}
+        onBlur={() => setTimeout(() => { setAbierto(false); setNoEncontrado(false); }, 180)}
+      />
+      {texto && AEROLINEA_MAP[texto.trim().toUpperCase()] && (
+        <div style={{ fontSize: 10, color: '#4ade80', fontFamily: 'system-ui', marginTop: 2, paddingLeft: 2 }}>
+          ✓ {nombreMostrado(texto.trim().toUpperCase())}
+        </div>
+      )}
+      {(abierto && (opciones.length > 0 || noEncontrado)) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 2, maxHeight: 220, overflowY: 'auto' }}>
+          {opciones.map((op, i) => (
+            <div key={i} onMouseDown={() => seleccionar(op.codigo)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)', background: 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.12)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 11, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: 4, padding: '1px 6px', fontWeight: 700, minWidth: 28, textAlign: 'center' }}>{op.codigo}</span>
+              <span style={{ fontSize: 13, color: '#c8d4f0' }}>{op.nombre}</span>
+            </div>
+          ))}
+          {noEncontrado && (
+            <div style={{ padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: '#7080b0', marginBottom: 8 }}>"{texto}" no encontrado</div>
+              <button onMouseDown={agregarAerolinea}
+                style={{ background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 6, padding: '5px 12px', color: '#4ade80', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                ✚ Agregar "{texto.toUpperCase()}"
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================
 // SUPABASE CONFIG
@@ -37776,9 +38091,9 @@ const S = {
   logo: { padding: "28px 24px 20px", borderBottom: "1px solid #1e2a3a" },
   logoText: { fontSize: 20, fontWeight: 700, color: "#e8334a", letterSpacing: "0.05em", lineHeight: 1.2 },
   logoSub: { fontSize: 11, color: "#7080b0", letterSpacing: "0.15em", textTransform: "uppercase", marginTop: 4, fontFamily: "system-ui, sans-serif" },
-  nav: { padding: "16px 0", flex: 1 },
-  navSection: { padding: "8px 16px 4px", fontSize: 10, color: "#3a4a80", letterSpacing: "0.2em", textTransform: "uppercase", fontFamily: "system-ui, sans-serif" },
-  navItem: (active) => ({ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", cursor: "pointer", borderRadius: "0 20px 20px 0", margin: "2px 12px 2px 0", transition: "all 0.2s", background: active ? "linear-gradient(90deg, #e8334a 0%, #c41f36 100%)" : "transparent", color: active ? "#0f1535" : "#8899cc", fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: active ? 700 : 400, borderLeft: active ? "3px solid #d4a843" : "3px solid transparent" }),
+  nav: { padding: "12px 0", flex: 1, overflowY: "auto", overflowX: "hidden" },
+  navSection: { padding: "6px 16px 3px", fontSize: 10, color: "#3a4a80", letterSpacing: "0.2em", textTransform: "uppercase", fontFamily: "system-ui, sans-serif" },
+  navItem: (active) => ({ display: "flex", alignItems: "center", gap: 10, padding: "8px 20px", cursor: "pointer", borderRadius: "0 20px 20px 0", margin: "1px 12px 1px 0", transition: "all 0.2s", background: active ? "linear-gradient(90deg, #e8334a 0%, #c41f36 100%)" : "transparent", color: active ? "#0f1535" : "#8899cc", fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: active ? 700 : 400, borderLeft: active ? "3px solid #d4a843" : "3px solid transparent" }),
   navIcon: { fontSize: 15, width: 18, textAlign: "center" },
   header: { padding: "24px 32px 20px", borderBottom: "1px solid #1a2332", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#111d3c" },
   headerTitle: { fontSize: 26, fontWeight: 700, color: "#ffffff", letterSpacing: "-0.02em" },
@@ -37946,11 +38261,34 @@ function PassengerPortal({ onBack }) {
 
     ${servicios.length > 0 ? `
     <h2>🎫 Servicios Incluidos</h2>
-    ${servicios.map(s => `
-      <div class="svc">
-        <div><div class="svc-tipo">${s.tipo}</div><div class="svc-name">${s.descripcion}</div></div>
-        ${s.precio > 0 ? `<div class="svc-precio">$${Number(s.precio).toLocaleString()} ${s.moneda||'USD'}</div>` : '<div style="color:#4ade80;font-weight:700;font-size:13px">✓ Incluido</div>'}
-      </div>`).join('')}` : ''}
+    ${servicios.map(s => {
+      const segsVuelo = s.tipo === 'Vuelo' && (s.segmentosVuelo||[]).length > 0 ? s.segmentosVuelo : [];
+      const itinerarioHtml = segsVuelo.map((seg, idx) => {
+        const lbl = s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? 'IDA' : 'VUELTA') : `TRAMO ${idx+1}`;
+        const ciudadO = resolverCiudad(seg.origen);
+        const ciudadD = resolverCiudad(seg.destino);
+        const fechaFmt = seg.fechaSalida ? seg.fechaSalida.split('-').reverse().join('/') : '';
+        const aeroNombre = seg.aerolinea ? (AEROLINEA_MAP[seg.aerolinea.toUpperCase()] || seg.aerolinea) : '';
+        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #eee">
+          <div style="background:#e8334a;color:#fff;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;margin-top:2px">${lbl}</div>
+          <div>
+            <div style="font-weight:700;color:#1a2580;font-size:13px">${ciudadO} → ${ciudadD}</div>
+            <div style="font-size:11px;color:#7080b0;margin-top:2px">
+              ${fechaFmt ? `📅 ${fechaFmt}${seg.horaSalida ? ' · ' + seg.horaSalida + 'hs' : ''}` : ''}
+              ${aeroNombre ? ` &nbsp;·&nbsp; ✈ ${seg.aerolinea?.toUpperCase()} ${aeroNombre}` : ''}
+              ${seg.numeroVuelo ? ` &nbsp;·&nbsp; <strong>Vuelo ${seg.numeroVuelo}</strong>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="svc" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${itinerarioHtml ? '10px' : '0'}">
+          <div><div class="svc-tipo">${s.tipo}${s.tipoRuta ? ' · ' + s.tipoRuta : ''}</div><div class="svc-name">${s.descripcion}</div></div>
+          ${s.precio > 0 ? `<div class="svc-precio">$${Number(s.precio).toLocaleString()} ${s.moneda||'USD'}</div>` : '<div style="color:#1a7a3a;font-weight:700;font-size:13px">✓ Incluido</div>'}
+        </div>
+        ${itinerarioHtml ? `<div style="background:#f0f4ff;border-radius:6px;padding:8px 12px">${itinerarioHtml}</div>` : ''}
+      </div>`;
+    }).join('')}` : ''}
 
     <div class="total-box">
       <div><div class="total-lbl">Total de tu viaje</div><div class="total-val">$${(venta.monto||0).toLocaleString()} USD</div></div>
@@ -38208,7 +38546,9 @@ function PassengerPortal({ onBack }) {
 // ============================================================
 // ADMIN MODULE COMPONENTS
 // ============================================================
-function Dashboard({ quotes, payments, passengers }) {
+function Dashboard({ quotes, payments, passengers, setView }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [categoriaActiva, setCategoriaActiva] = useState('VENTAS');
   const ingresos = payments.filter(p => p.status === "Pagado").reduce((a, p) => a + p.amount, 0);
   const cotizacionesActivas = quotes.filter(q => q.status !== "Cancelada").length;
   const viajesConfirmados = quotes.filter(q => q.status === "Confirmada").length;
@@ -38242,6 +38582,29 @@ function Dashboard({ quotes, payments, passengers }) {
     try {
       const ventas = JSON.parse(localStorage.getItem(key) || '[]');
       ventas.forEach(v => {
+        // Alertas de salida de vuelos (web check-in 48hs antes)
+        (v.servicios || []).filter(s => s.tipo === 'Vuelo').forEach(s => {
+          (s.segmentosVuelo || []).forEach(seg => {
+            if (!seg.fechaSalida) return;
+            const salida = new Date(`${seg.fechaSalida}T${seg.horaSalida || '00:00'}`);
+            const diffHs = (salida - new Date()) / 3600000;
+            if (diffHs >= 0 && diffHs <= 48) {
+              const diffDias = diffHs < 24 ? 0 : 1;
+              alertas.push({
+                cliente: v.cliente,
+                ventaId: v.ventaId,
+                servicio: `${resolverCiudad(seg.origen) || seg.origen || '?'} → ${resolverCiudad(seg.destino) || seg.destino || '?'}${seg.aerolinea ? ' · ' + seg.aerolinea.toUpperCase() : ''}${seg.numeroVuelo ? ' ' + seg.numeroVuelo : ''}${seg.horaSalida ? ' · ' + seg.horaSalida + 'hs' : ''}`,
+                tipo: '✈️ Salida vuelo',
+                color: '#38bdf8',
+                bg: 'rgba(56,189,248,0.10)',
+                fecha: seg.fechaSalida,
+                diffDias,
+                esVuelo: true,
+              });
+            }
+          });
+        });
+
         // Fechas de pago por servicio
         (v.servicios || []).forEach(s => {
           [
@@ -38293,7 +38656,14 @@ function Dashboard({ quotes, payments, passengers }) {
     });
   } catch {}
 
-  alertas.sort((a, b) => a.diffDias - b.diffDias);
+  // Deduplicar: mismo pasajero + mismo tipo de alerta → quedarse con uno solo
+  const alertasUnicas = [];
+  const vistos = new Set();
+  alertas.forEach(a => {
+    const key = `${(a.cliente||'').toLowerCase().trim()}|${a.tipo}`;
+    if (!vistos.has(key)) { vistos.add(key); alertasUnicas.push(a); }
+  });
+  alertasUnicas.sort((a, b) => a.diffDias - b.diffDias);
   const fmtFecha = f => {
     if (!f) return '';
     const partes = f.includes('-') ? f.split('-') : f.split('/').reverse();
@@ -38480,19 +38850,19 @@ function Dashboard({ quotes, payments, passengers }) {
   return (
     <div>
       {/* ALERTAS DE VENCIMIENTOS */}
-      <div style={{ marginBottom: 24, border: `1.5px solid ${alertas.length > 0 ? '#e8334a' : '#1e2e6a'}`, borderRadius: 12, overflow: 'hidden' }}>
-        <div style={{ background: alertas.length > 0 ? 'rgba(232,51,74,0.15)' : 'rgba(30,46,106,0.4)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>{alertas.length > 0 ? '🔔' : '✅'}</span>
-          <span style={{ fontWeight: 700, color: alertas.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
-            {alertas.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
+      <div style={{ marginBottom: 24, border: `1.5px solid ${alertasUnicas.length > 0 ? '#e8334a' : '#1e2e6a'}`, borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ background: alertasUnicas.length > 0 ? 'rgba(232,51,74,0.15)' : 'rgba(30,46,106,0.4)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>{alertasUnicas.length > 0 ? '🔔' : '✅'}</span>
+          <span style={{ fontWeight: 700, color: alertasUnicas.length > 0 ? '#e8334a' : '#4ade80', fontSize: 15 }}>
+            {alertasUnicas.length > 0 ? 'Vencimientos próximos — próximas 48hs' : 'Sin vencimientos en las próximas 48hs'}
           </span>
-          {alertas.length > 0 && (
-            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertas.length}</span>
+          {alertasUnicas.length > 0 && (
+            <span style={{ marginLeft: 'auto', background: '#e8334a', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{alertasUnicas.length}</span>
           )}
         </div>
-        {alertas.length > 0 && (
+        {alertasUnicas.length > 0 && (
           <div style={{ padding: '8px 0' }}>
-            {alertas.map((a, i) => (
+            {alertasUnicas.map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: a.bg, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <div style={{ minWidth: 90, fontWeight: 700, fontSize: 12, color: a.diffDias === 0 ? '#e8334a' : a.diffDias === 1 ? '#fb923c' : '#fbbf24' }}>{labelDia(a.diffDias)}</div>
                 <div style={{ minWidth: 120, fontSize: 12, color: a.color, fontWeight: 600 }}>{a.tipo}</div>
@@ -38524,6 +38894,269 @@ function Dashboard({ quotes, payments, passengers }) {
           </div>
         ))}
       </div>
+
+      {/* ===== BUSCADOR GLOBAL ===== */}
+      {(() => {
+        const CATS = [
+          { id: 'VENTAS',       label: 'Ventas',       icon: '🧾' },
+          { id: 'PROVEEDORES',  label: 'Proveedores',  icon: '🏢' },
+          { id: 'COTIZACIONES', label: 'Cotizaciones', icon: '📋' },
+          { id: 'PASAJEROS',    label: 'Pasajeros',    icon: '👤' },
+        ];
+
+        // Recolectar todas las ventas con su mes/key de origen
+        const todasLasVentas = [];
+        MESES_KEYS.forEach(key => {
+          try { JSON.parse(localStorage.getItem(key) || '[]').forEach(v => todasLasVentas.push({ ...v, _mesKey: key })); } catch {}
+        });
+
+        // Proveedores únicos extraídos de servicios en ventas
+        const provsDeVentas = {};
+        todasLasVentas.forEach(v => {
+          (v.servicios || []).forEach(s => {
+            if (s.proveedor) {
+              if (!provsDeVentas[s.proveedor]) provsDeVentas[s.proveedor] = { nombre: s.proveedor, servicios: [], ventas: new Set() };
+              provsDeVentas[s.proveedor].servicios.push({ ...s, ventaId: v.ventaId, cliente: v.cliente });
+              provsDeVentas[s.proveedor].ventas.add(v.ventaId);
+            }
+          });
+        });
+
+        // Pasajeros desde localStorage
+        let todosPax = [];
+        try { todosPax = JSON.parse(localStorage.getItem('atd_passengers') || '[]'); } catch {}
+        if (todosPax.length === 0) todosPax = passengers;
+
+        const q = busqueda.toLowerCase().trim();
+        const LIMIT_DEFAULT = 3;  // sin búsqueda: últimas 3
+        const LIMIT_BUSQ   = 30;  // con búsqueda: hasta 30
+
+        // Ventas: filtrar y limitar
+        const ventasFiltradas = !q
+          ? [...todasLasVentas].reverse().slice(0, LIMIT_DEFAULT)
+          : todasLasVentas.filter(v =>
+              (v.cliente||'').toLowerCase().includes(q) ||
+              (v.ventaId||'').toLowerCase().includes(q) ||
+              (v.destino||'').toLowerCase().includes(q) ||
+              (v.estado||'').toLowerCase().includes(q) ||
+              (v.servicios||[]).some(s => (s.descripcion||'').toLowerCase().includes(q) || (s.tipo||'').toLowerCase().includes(q))
+            ).slice(0, LIMIT_BUSQ);
+
+        const proveedoresList = Object.values(provsDeVentas);
+        const proveedoresFiltrados = !q
+          ? proveedoresList.slice(0, 20)
+          : proveedoresList.filter(p =>
+              (p.nombre||'').toLowerCase().includes(q) ||
+              p.servicios.some(s => (s.descripcion||'').toLowerCase().includes(q) || (s.tipo||'').toLowerCase().includes(q))
+            ).slice(0, LIMIT_BUSQ);
+
+        // Cotizaciones: filtrar y limitar
+        const cotsFiltradas = !q
+          ? [...quotes].reverse().slice(0, LIMIT_DEFAULT)
+          : quotes.filter(cot =>
+              (cot.client||cot.cliente||'').toLowerCase().includes(q) ||
+              (cot.destination||cot.destino||'').toLowerCase().includes(q) ||
+              (cot.status||cot.estado||'').toLowerCase().includes(q) ||
+              String(cot.id||'').toLowerCase().includes(q)
+            ).slice(0, LIMIT_BUSQ);
+
+        const paxFiltrados = !q
+          ? todosPax.slice(0, 20)
+          : todosPax.filter(p =>
+              (p.name||p.nombre||'').toLowerCase().includes(q) ||
+              (p.email||'').toLowerCase().includes(q) ||
+              (p.phone||p.telefono||'').toLowerCase().includes(q) ||
+              (p.dni||'').toLowerCase().includes(q) ||
+              String(p.id||'').toLowerCase().includes(q)
+            ).slice(0, LIMIT_BUSQ);
+
+        const conteos = {
+          VENTAS: ventasFiltradas.length,
+          PROVEEDORES: proveedoresFiltrados.length,
+          COTIZACIONES: cotsFiltradas.length,
+          PASAJEROS: paxFiltrados.length,
+        };
+
+        const fmtMonto = n => n ? `$${Number(n).toLocaleString()}` : '—';
+        const statusColor = st => {
+          const s = (st||'').toLowerCase();
+          if (s.includes('confirm') || s.includes('pagad') || s.includes('activ')) return '#4ade80';
+          if (s.includes('cancel') || s.includes('vencid')) return '#f87171';
+          if (s.includes('pend') || s.includes('espera')) return '#fbbf24';
+          return '#7080b0';
+        };
+        const rowHover = { cursor: 'pointer' };
+
+        return (
+          <div style={{ border: '1.5px solid #1e2e6a', borderRadius: 12, overflow: 'hidden', marginBottom: 8 }}>
+            {/* Header */}
+            <div style={{ background: 'rgba(30,46,106,0.5)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 18 }}>🔍</span>
+              <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 15, whiteSpace: 'nowrap' }}>Buscador global</span>
+              <input
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, destino, ID, servicio..."
+                style={{ flex: 1, background: '#0f1535', border: '1px solid #2a3a6a', borderRadius: 8, padding: '7px 14px', color: '#fff', fontFamily: 'system-ui', fontSize: 13, outline: 'none' }}
+              />
+              {busqueda && (
+                <button onClick={() => setBusqueda('')} style={{ background: 'none', border: 'none', color: '#7080b0', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', background: 'rgba(15,21,53,0.8)', borderBottom: '1px solid #1e2e6a' }}>
+              {CATS.map(cat => (
+                <button key={cat.id} onClick={() => setCategoriaActiva(cat.id)}
+                  style={{ flex: 1, padding: '9px 4px', border: 'none', cursor: 'pointer', fontFamily: 'system-ui', fontSize: 12, fontWeight: 600, transition: 'all 0.15s',
+                    background: categoriaActiva === cat.id ? 'rgba(96,165,250,0.15)' : 'transparent',
+                    color: categoriaActiva === cat.id ? '#60a5fa' : '#5060a0',
+                    borderBottom: categoriaActiva === cat.id ? '2px solid #60a5fa' : '2px solid transparent',
+                  }}>
+                  {cat.icon} {cat.label}
+                  <span style={{ marginLeft: 5, background: categoriaActiva === cat.id ? '#60a5fa' : '#1e2e6a', color: categoriaActiva === cat.id ? '#fff' : '#5060a0', borderRadius: 10, padding: '1px 6px', fontSize: 10 }}>{conteos[cat.id]}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Resultados */}
+            <div style={{ maxHeight: 340, overflowY: 'auto', background: '#080f28' }}>
+
+              {/* VENTAS — clickeable → navega al mes correspondiente */}
+              {categoriaActiva === 'VENTAS' && (
+                ventasFiltradas.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : <>
+                  {ventasFiltradas.map((v, i) => {
+                    const totalCobrado = (v.cobros||[]).reduce((a,c) => a+(c.monto||c.amount||0), 0);
+                    const totalVenta = v.monto || 0;
+                    const saldo = totalVenta - totalCobrado;
+                    return (
+                      <div key={v.ventaId || i}
+                        onClick={() => setView && setView(v._mesKey)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 110 }}>{v.ventaId || '—'}</span>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.cliente || '—'}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0', minWidth: 80, textAlign: 'center' }}>{v.destino || '—'}</span>
+                        <span style={{ fontSize: 11, color: '#fbbf24', minWidth: 70, textAlign: 'right', fontWeight: 600 }}>{fmtMonto(totalVenta)}</span>
+                        <span style={{ fontSize: 11, color: saldo > 0 ? '#f87171' : '#4ade80', minWidth: 80, textAlign: 'right', fontWeight: 600 }}>Saldo {fmtMonto(saldo)}</span>
+                        <span style={{ fontSize: 10, color: statusColor(v.estado), background: 'rgba(30,46,106,0.5)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{v.estado || '—'}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                    );
+                  })}
+                  {!busqueda && (
+                    <div style={{ padding: '8px 20px', fontSize: 11, color: '#3a4a80', fontFamily: 'system-ui', textAlign: 'center', borderTop: '1px solid #1e2e6a' }}>
+                      Últimas {LIMIT_DEFAULT} ventas · Buscá para ver más
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* PROVEEDORES — clickeable → navega a módulo Proveedores */}
+              {categoriaActiva === 'PROVEEDORES' && (
+                proveedoresFiltrados.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin proveedores registrados en ventas</div>
+                ) : proveedoresFiltrados.map((p, i) => {
+                  const total = p.servicios.reduce((a,s) => a+(s.precio||0), 0);
+                  const neto = p.servicios.reduce((a,s) => a+(s.neto||0), 0);
+                  return (
+                    <div key={p.nombre+i}
+                      onClick={() => setView && setView('providers')}
+                      style={{ padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1 }}>🏢 {p.nombre}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0' }}>{p.ventas.size} {p.ventas.size === 1 ? 'venta' : 'ventas'}</span>
+                        <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Total {fmtMonto(total)}</span>
+                        <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600 }}>Neto {fmtMonto(neto)}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {p.servicios.slice(0,5).map((s,j) => (
+                          <span key={j} style={{ fontSize: 10, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', borderRadius: 4, padding: '2px 7px' }}>{s.tipo} · {s._ventaId || s.ventaId}</span>
+                        ))}
+                        {p.servicios.length > 5 && <span style={{ fontSize: 10, color: '#3a4a80' }}>+{p.servicios.length-5} más</span>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* COTIZACIONES */}
+              {categoriaActiva === 'COTIZACIONES' && (
+                cotsFiltradas.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : <>
+                  {cotsFiltradas.map((cot, i) => {
+                    const cliente = cot.client || cot.cliente || '—';
+                    const destino = cot.destination || cot.destino || '—';
+                    const estado = cot.status || cot.estado || '—';
+                    const total = cot.total || cot.monto || 0;
+                    return (
+                      <div key={cot.id || i}
+                        onClick={() => setView && setView('quotes')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 40 }}>#{cot.id}</span>
+                        <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cliente}</span>
+                        <span style={{ fontSize: 11, color: '#7080b0', minWidth: 90, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{destino}</span>
+                        {total > 0 && <span style={{ fontSize: 11, color: '#fbbf24', minWidth: 70, textAlign: 'right', fontWeight: 600 }}>{fmtMonto(total)}</span>}
+                        <span style={{ fontSize: 10, color: statusColor(estado), background: 'rgba(30,46,106,0.5)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{estado}</span>
+                        <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                      </div>
+                    );
+                  })}
+                  {!busqueda && (
+                    <div style={{ padding: '8px 20px', fontSize: 11, color: '#3a4a80', fontFamily: 'system-ui', textAlign: 'center', borderTop: '1px solid #1e2e6a' }}>
+                      Últimas {LIMIT_DEFAULT} cotizaciones · Buscá para ver más
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* PASAJEROS */}
+              {categoriaActiva === 'PASAJEROS' && (
+                paxFiltrados.length === 0 ? (
+                  <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 24 }}>Sin resultados</div>
+                ) : paxFiltrados.map((p, i) => {
+                  const nombre = p.name || p.nombre || '—';
+                  const doc = p.dni || p.pasaporte || '—';
+                  const vencDoc = p.docExpiracion || p.expiracion;
+                  const hoyStr = new Date().toISOString().split('T')[0];
+                  const docVigente = vencDoc ? vencDoc >= hoyStr : null;
+                  return (
+                    <div key={p.id || i}
+                      onClick={() => setView && setView('passengers')}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.10)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#3a4a80', minWidth: 30 }}>#{p.id}</span>
+                      <span style={{ fontWeight: 700, color: '#c8d4f0', fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
+                      <span style={{ fontSize: 11, color: '#7080b0', minWidth: 80 }}>{p.email || '—'}</span>
+                      <span style={{ fontSize: 11, color: '#7080b0', minWidth: 60 }}>{p.phone || p.telefono || '—'}</span>
+                      <span style={{ fontSize: 11, color: '#5060a0', minWidth: 80 }}>{p.tipoDoc || 'DNI'}: {doc}</span>
+                      {vencDoc && (
+                        <span style={{ fontSize: 10, color: docVigente ? '#4ade80' : '#f87171', background: docVigente ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                          {docVigente ? '✓' : '⚠️'} Doc {vencDoc.split('-').reverse().join('/')}
+                        </span>
+                      )}
+                      {p.alertaCumple && <span style={{ fontSize: 12 }}>🔔</span>}
+                      <span style={{ fontSize: 12, color: '#3a4a80' }}>›</span>
+                    </div>
+                  );
+                })
+              )}
+
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -39019,7 +39652,7 @@ function ProvidersModule() {
             </div>
 
             <div style={{ display: "flex", borderBottom: "1px solid #1e2e6a", marginBottom: 0 }}>
-              {[["info","📋 Info"],["pagos","💳 Formas de Pago"],["accesos","🔐 Accesos"],["subperfiles","🏢 Unidades de Negocio"]].map(([id,label]) => (
+              {[["info","📋 Info"],["pagos","💳 Formas de Pago"],["accesos","🔐 Accesos"],["subperfiles","🏢 Unidades de Negocio"],["reporte","📊 Reporte"]].map(([id,label]) => (
                 <div key={id} style={tabStyle(detailTab === id)} onClick={() => setDetailTab(id)}>{label}</div>
               ))}
             </div>
@@ -39035,6 +39668,206 @@ function ProvidersModule() {
               )}
               {detailTab === "pagos" && renderPaymentsTab(detailProvider, false)}
               {detailTab === "accesos" && renderAccessTab(detailProvider, false)}
+              {detailTab === "reporte" && (() => {
+                const MESES_R = ["mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+                const prov = detailProvider;
+                const nombresRelacionados = [prov.name, ...(prov.subprofiles||[]).map(s => s.name)].filter(Boolean);
+
+                // Netos: servicios de ventas cuyo proveedor coincide
+                const netosPorUnidad = {}; // { unidad: { servicios: [{ventaId, mes, descripcion, tipo, neto}] } }
+                MESES_R.forEach(mes => {
+                  try {
+                    const vs = JSON.parse(localStorage.getItem(`ventas_2026_${mes}`) || '[]');
+                    vs.forEach(v => {
+                      (v.servicios||[]).forEach(s => {
+                        if (!nombresRelacionados.some(n => (s.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                        const unidad = s.proveedor || prov.name;
+                        if (!netosPorUnidad[unidad]) netosPorUnidad[unidad] = { items: [] };
+                        netosPorUnidad[unidad].items.push({ ventaId: v.ventaId, mes, cliente: v.cliente, tipo: s.tipo, descripcion: s.descripcion||'', neto: s.neto||0 });
+                      });
+                    });
+                  } catch {}
+                });
+
+                const totalNeto = Object.values(netosPorUnidad).reduce((a, u) => a + u.items.reduce((b, i) => b + i.neto, 0), 0);
+
+                // Pagos: de ventas.pagos + atd_payments globales
+                const pagosAlProv = [];
+                const idsVistos = new Set();
+                MESES_R.forEach(mes => {
+                  try {
+                    const vs = JSON.parse(localStorage.getItem(`ventas_2026_${mes}`) || '[]');
+                    vs.forEach(v => {
+                      (v.pagos||[]).forEach(p => {
+                        if (!nombresRelacionados.some(n => (p.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                        if (!idsVistos.has(p.id)) { idsVistos.add(p.id); pagosAlProv.push({ ...p, _ventaId: v.ventaId }); }
+                      });
+                    });
+                  } catch {}
+                });
+                try {
+                  JSON.parse(localStorage.getItem('atd_payments') || '[]').forEach(p => {
+                    if (!nombresRelacionados.some(n => (p.proveedor||'').toLowerCase() === n.toLowerCase())) return;
+                    if (!idsVistos.has(p.id)) { idsVistos.add(p.id); pagosAlProv.push(p); }
+                  });
+                } catch {}
+
+                const totalPagado = pagosAlProv.reduce((a, p) => a + (p.monto||p.amount||0), 0);
+                const saldo = totalNeto - totalPagado;
+                const fmtM = n => `$${Number(n||0).toLocaleString()}`;
+                const fmtF = f => f ? String(f).split('-').reverse().join('/') : '—';
+
+                // Excel export
+                const exportExcel = () => {
+                  const esc = v => String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                  const hdr = v => `<Cell ss:StyleID="h"><Data ss:Type="String">${esc(v)}</Data></Cell>`;
+                  const str = v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`;
+                  const num = v => `<Cell ss:StyleID="n"><Data ss:Type="Number">${Number(v)||0}</Data></Cell>`;
+                  const R = cells => '<Row>' + cells.join('') + '</Row>';
+
+                  // Hoja 1: Netos por servicio
+                  const allItems = Object.entries(netosPorUnidad).flatMap(([u, d]) => d.items.map(i => ({...i, _unidad: u})));
+                  const hdrN = R([hdr('Unidad / Proveedor'),hdr('ID Venta'),hdr('Mes'),hdr('Cliente'),hdr('Tipo'),hdr('Descripción'),hdr('Neto USD')]);
+                  const rowsN = allItems.map(i => R([str(i._unidad),str(i.ventaId),str(i.mes),str(i.cliente),str(i.tipo),str(i.descripcion),num(i.neto)])).join('');
+                  const totN = R([hdr('TOTAL NETO'),str(''),str(''),str(''),str(''),str(''),num(totalNeto)]);
+
+                  // Hoja 2: Pagos
+                  const hdrP = R([hdr('Fecha'),hdr('ID Venta'),hdr('Unidad / Proveedor'),hdr('Concepto'),hdr('Monto'),hdr('Moneda'),hdr('Método'),hdr('Estado')]);
+                  const rowsP = pagosAlProv.map(p => R([str(fmtF(p.fecha||p.date)),str(p._ventaId||p.ventaId||''),str(p.proveedor),str(p.concepto||p.description||''),num(p.monto||p.amount),str(p.moneda||'USD'),str(p.metodo||p.method||''),str(p.estado||p.status||'')])).join('');
+                  const totP = R([hdr('TOTAL PAGADO'),str(''),str(''),str(''),num(totalPagado),str(''),str(''),str('')]);
+                  const saldoR = R([hdr('SALDO PENDIENTE'),str(''),str(''),str(''),num(saldo),str(''),str(''),str('')]);
+
+                  // Hoja 3: Resumen por unidad
+                  const hdrU = R([hdr('Unidad de Negocio'),hdr('Servicios'),hdr('Total Neto USD')]);
+                  const rowsU = Object.entries(netosPorUnidad).map(([u,d]) => R([str(u),num(d.items.length),num(d.items.reduce((a,i)=>a+i.neto,0))])).join('');
+
+                  const xml = [
+                    '<?xml version="1.0" encoding="UTF-8"?>',
+                    '<?mso-application progid="Excel.Sheet"?>',
+                    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+                    '<Styles><Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#162040" ss:Pattern="Solid"/></Style>',
+                    '<Style ss:ID="n"><NumberFormat ss:Format="#,##0"/></Style></Styles>',
+                    `<Worksheet ss:Name="Netos"><Table>`, hdrN, rowsN, totN, '</Table></Worksheet>',
+                    `<Worksheet ss:Name="Pagos"><Table>`, hdrP, rowsP, totP, saldoR, '</Table></Worksheet>',
+                    `<Worksheet ss:Name="Por Unidad"><Table>`, hdrU, rowsU, '</Table></Worksheet>',
+                    '</Workbook>'
+                  ].join('');
+                  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url;
+                  a.download = `reporte_${prov.name.replace(/\s+/g,'_').toLowerCase()}_2026.xls`;
+                  a.click(); URL.revokeObjectURL(url);
+                };
+
+                return (
+                  <div>
+                    {/* Acción Excel */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                      <button onClick={exportExcel} style={{ ...S.btn('primary'), fontSize: 12 }}>📊 Exportar Excel</button>
+                    </div>
+
+                    {/* 3 KPIs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(167,139,250,0.25)' }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>TOTAL NETO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#a78bfa' }}>{fmtM(totalNeto)}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>Costo total de servicios</div>
+                      </div>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(74,222,128,0.25)' }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>TOTAL PAGADO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#4ade80' }}>{fmtM(totalPagado)}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>{pagosAlProv.length} pago{pagosAlProv.length !== 1 ? 's' : ''} registrado{pagosAlProv.length !== 1 ? 's' : ''}</div>
+                      </div>
+                      <div style={{ background: '#0f1535', borderRadius: 10, padding: '14px 18px', border: `1px solid ${saldo > 0 ? 'rgba(248,113,113,0.3)' : 'rgba(74,222,128,0.2)'}` }}>
+                        <div style={{ fontSize: 11, color: '#7080b0', fontFamily: 'system-ui', marginBottom: 4 }}>{saldo > 0 ? 'SALDO A PAGAR' : 'SALDO'}</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: saldo > 0 ? '#f87171' : '#4ade80' }}>{fmtM(Math.abs(saldo))}</div>
+                        <div style={{ fontSize: 10, color: '#5060a0', marginTop: 4 }}>{saldo > 0 ? '⚠️ Pendiente de pago' : '✅ Al día'}</div>
+                      </div>
+                    </div>
+
+                    {/* Netos por unidad de negocio */}
+                    {Object.entries(netosPorUnidad).map(([unidad, d]) => {
+                      const netoUnidad = d.items.reduce((a, i) => a + i.neto, 0);
+                      return (
+                        <div key={unidad} style={{ marginBottom: 16 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 700, fontFamily: 'system-ui', letterSpacing: '0.06em' }}>🏷️ NETOS — {unidad}</span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginLeft: 'auto' }}>{fmtM(netoUnidad)}</span>
+                          </div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'system-ui' }}>
+                            <thead>
+                              <tr style={{ background: '#111d3c' }}>
+                                {['ID Venta','Mes','Cliente','Tipo','Descripción','Neto USD'].map(h => (
+                                  <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: '#7080b0', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #1e2e6a' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {d.items.map((item, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i%2===0?'transparent':'rgba(30,46,106,0.05)' }}>
+                                  <td style={{ padding: '6px 10px', color: '#3a4a80', fontFamily: 'monospace', fontSize: 11 }}>{item.ventaId}</td>
+                                  <td style={{ padding: '6px 10px', color: '#7080b0' }}>{item.mes.charAt(0).toUpperCase()+item.mes.slice(1)}</td>
+                                  <td style={{ padding: '6px 10px', color: '#c8d4f0', fontWeight: 600 }}>{item.cliente}</td>
+                                  <td style={{ padding: '6px 10px' }}><span style={{ fontSize: 10, background: 'rgba(96,165,250,0.1)', color: '#60a5fa', borderRadius: 4, padding: '1px 7px' }}>{item.tipo}</span></td>
+                                  <td style={{ padding: '6px 10px', color: '#7080b0' }}>{item.descripcion||'—'}</td>
+                                  <td style={{ padding: '6px 10px', color: '#a78bfa', fontWeight: 700 }}>{fmtM(item.neto)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                    {Object.keys(netosPorUnidad).length === 0 && (
+                      <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 16 }}>Sin servicios con neto registrado para este proveedor</div>
+                    )}
+
+                    {/* Pagos */}
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 700, fontFamily: 'system-ui', letterSpacing: '0.06em' }}>💳 PAGOS REGISTRADOS</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#4ade80', marginLeft: 'auto' }}>{fmtM(totalPagado)}</span>
+                      </div>
+                      {pagosAlProv.length === 0
+                        ? <div style={{ color: '#3a4a80', fontFamily: 'system-ui', fontSize: 13, textAlign: 'center', padding: 12 }}>Sin pagos registrados</div>
+                        : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'system-ui' }}>
+                          <thead>
+                            <tr style={{ background: '#111d3c' }}>
+                              {['Fecha','ID Venta','Unidad','Concepto','Monto','Moneda','Método','Estado'].map(h => (
+                                <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: '#7080b0', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #1e2e6a' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagosAlProv.map((p, i) => (
+                              <tr key={p.id||i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i%2===0?'transparent':'rgba(30,46,106,0.05)' }}>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{fmtF(p.fecha||p.date)}</td>
+                                <td style={{ padding: '6px 10px', color: '#3a4a80', fontFamily: 'monospace', fontSize: 11 }}>{p._ventaId||p.ventaId||'—'}</td>
+                                <td style={{ padding: '6px 10px', color: '#c8d4f0', fontWeight: 600 }}>{p.proveedor}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.concepto||p.description||'—'}</td>
+                                <td style={{ padding: '6px 10px', color: '#4ade80', fontWeight: 700 }}>{fmtM(p.monto||p.amount)}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.moneda||'USD'}</td>
+                                <td style={{ padding: '6px 10px', color: '#7080b0' }}>{p.metodo||p.method||'—'}</td>
+                                <td style={{ padding: '6px 10px' }}><span style={{ fontSize: 10, background: 'rgba(30,46,106,0.5)', color: '#7080b0', borderRadius: 4, padding: '2px 7px' }}>{p.estado||p.status||'—'}</span></td>
+                              </tr>
+                            ))}
+                            <tr style={{ background: '#111d3c', borderTop: '2px solid #1e2e6a' }}>
+                              <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, color: '#4ade80', fontSize: 12 }}>TOTAL PAGADO</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 800, color: '#4ade80', fontSize: 13 }}>{fmtM(totalPagado)}</td>
+                              <td colSpan={3}/>
+                            </tr>
+                            <tr style={{ background: saldo > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(74,222,128,0.06)', borderTop: '1px solid #1e2e6a' }}>
+                              <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, color: saldo > 0 ? '#f87171' : '#4ade80', fontSize: 12 }}>{saldo > 0 ? '⚠️ SALDO PENDIENTE' : '✅ SALDO'}</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 800, color: saldo > 0 ? '#f87171' : '#4ade80', fontSize: 14 }}>{fmtM(Math.abs(saldo))}</td>
+                              <td colSpan={3}/>
+                            </tr>
+                          </tbody>
+                        </table>
+                      }
+                    </div>
+                  </div>
+                );
+              })()}
               {detailTab === "subperfiles" && (
                 <div>
                   {(detailProvider.subprofiles || []).length === 0
@@ -42146,6 +42979,107 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               </div>
                             </div>
                           </div>
+                          {/* SECCIÓN VUELOS */}
+                          {s.tipo === 'Vuelo' && (
+                            <div style={{ borderTop: "1px solid #1e2e6a", paddingTop: 10, marginTop: 4, marginBottom: 10 }}>
+                              <div style={{ fontSize: 11, color: "#7080b0", fontFamily: "system-ui", marginBottom: 8, letterSpacing: "0.08em" }}>✈️ ITINERARIO DE VUELO</div>
+                              <div style={{ marginBottom: 8 }}>
+                                <label style={S.label}>Tipo de ruta</label>
+                                <select style={S.input} value={s.tipoRuta||'Ida y Vuelta'} onChange={e => {
+                                  const tipoRuta = e.target.value;
+                                  let segs = s.segmentosVuelo || [];
+                                  if (tipoRuta === 'Ida' && segs.length === 0) segs = [{ id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  if (tipoRuta === 'Ida y Vuelta' && segs.length < 2) segs = [segs[0]||{ id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }, { id: Date.now()+1, origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, tipoRuta, segmentosVuelo: segs} : x);
+                                  update({ servicios: u });
+                                }}>
+                                  {['Ida','Ida y Vuelta','Multidestino'].map(t => <option key={t}>{t}</option>)}
+                                </select>
+                              </div>
+                              {(s.segmentosVuelo||[{ id: 1, origen: '', destino: '', fechaSalida: '', horaSalida: '' }]).map((seg, idx) => (
+                                <div key={seg.id} style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', fontFamily: 'system-ui' }}>
+                                      {s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? '✈️ IDA' : '✈️ VUELTA') : `✈️ TRAMO ${idx + 1}`}
+                                    </span>
+                                    {s.tipoRuta === 'Multidestino' && (s.segmentosVuelo||[]).length > 1 && (
+                                      <button style={{ ...S.btn('danger'), padding: '2px 6px', fontSize: 10 }} onClick={() => {
+                                        const segs = (s.segmentosVuelo||[]).filter((_,i) => i !== idx);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }}>✕</button>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+                                    <div><label style={S.label}>Origen</label>
+                                      <CiudadAeropuertoSearch
+                                        value={seg.origen||''}
+                                        placeholder="BUE, Buenos Aires..."
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, origen: v} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                    <div><label style={S.label}>Destino</label>
+                                      <CiudadAeropuertoSearch
+                                        value={seg.destino||''}
+                                        placeholder="VCE, Venecia..."
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, destino: v} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                                    <div>
+                                      <label style={S.label}>Cía. Aérea (IATA)</label>
+                                      <AerolineaSearch
+                                        value={seg.aerolinea||''}
+                                        onChange={v => {
+                                          const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, aerolinea: v.toUpperCase()} : sg);
+                                          const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                          update({ servicios: u });
+                                        }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={S.label}>N° Vuelo</label>
+                                      <input style={S.input} placeholder="AR1234" value={seg.numeroVuelo||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, numeroVuelo: e.target.value.toUpperCase()} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                    <div><label style={S.label}>Fecha salida</label>
+                                      <input type="date" style={S.input} value={seg.fechaSalida||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, fechaSalida: e.target.value} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                    <div><label style={S.label}>Hora salida</label>
+                                      <input type="time" style={S.input} value={seg.horaSalida||''} onChange={e => {
+                                        const segs = (s.segmentosVuelo||[]).map((sg,i) => i===idx ? {...sg, horaSalida: e.target.value} : sg);
+                                        const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                        update({ servicios: u });
+                                      }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {s.tipoRuta === 'Multidestino' && (
+                                <button style={{ ...S.btn('ghost'), fontSize: 11, padding: '4px 10px' }} onClick={() => {
+                                  const segs = [...(s.segmentosVuelo||[]), { id: Date.now(), origen: '', destino: '', fechaSalida: '', horaSalida: '' }];
+                                  const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, segmentosVuelo: segs} : x);
+                                  update({ servicios: u });
+                                }}>+ Agregar tramo</button>
+                              )}
+                            </div>
+                          )}
                           <button style={{ ...S.btn("primary"), fontSize: 12 }} onClick={() => {
                             const u = (data.servicios||[]).map(x => x.id === s.id ? {...x, _editing: false} : x);
                             update({ servicios: u });
@@ -42190,6 +43124,47 @@ function VentaDetailModal({ venta, onClose, onUpdate, mesNombre, globalPayments,
                               </div>
                             );
                           })()}
+                          {/* ITINERARIO DE VUELO — view mode */}
+                          {s.tipo === 'Vuelo' && (s.segmentosVuelo||[]).length > 0 && (
+                            <div style={{ marginTop: 8, background: '#0a1020', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 8, padding: '10px 14px' }}>
+                              <div style={{ fontSize: 10, color: '#60a5fa', fontFamily: 'system-ui', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>
+                                ✈️ ITINERARIO — {s.tipoRuta || 'Ida y Vuelta'}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {(s.segmentosVuelo||[]).map((seg, idx) => {
+                                  const label = s.tipoRuta === 'Ida y Vuelta' ? (idx === 0 ? 'IDA' : 'VUELTA') : `TRAMO ${idx+1}`;
+                                  const fechaFmt = seg.fechaSalida ? seg.fechaSalida.split('-').reverse().join('/') : '—';
+                                  const hora = seg.horaSalida || '';
+                                  const ciudadOrigen = resolverCiudad(seg.origen);
+                                  const ciudadDestino = resolverCiudad(seg.destino);
+                                  const aerolineaNombre = seg.aerolinea ? (AEROLINEA_MAP[seg.aerolinea.toUpperCase()] || seg.aerolinea) : null;
+                                  return (
+                                    <div key={seg.id || idx} style={{ background: 'rgba(96,165,250,0.05)', borderRadius: 6, padding: '8px 10px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: aerolineaNombre || seg.numeroVuelo ? 4 : 0, fontFamily: 'system-ui' }}>
+                                        <span style={{ fontSize: 10, background: 'rgba(96,165,250,0.2)', color: '#60a5fa', borderRadius: 4, padding: '1px 7px', fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{label}</span>
+                                        <span style={{ color: '#c8d4f0', fontWeight: 700, fontSize: 13 }}>{ciudadOrigen}</span>
+                                        <span style={{ color: '#60a5fa', fontSize: 14 }}>→</span>
+                                        <span style={{ color: '#c8d4f0', fontWeight: 700, fontSize: 13 }}>{ciudadDestino}</span>
+                                        {seg.fechaSalida && (
+                                          <span style={{ marginLeft: 'auto', color: '#fbbf24', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>📅 {fechaFmt}{hora ? ` · ${hora}hs` : ''}</span>
+                                        )}
+                                      </div>
+                                      {(aerolineaNombre || seg.numeroVuelo) && (
+                                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, fontFamily: 'system-ui', paddingLeft: 4 }}>
+                                          {aerolineaNombre && (
+                                            <span style={{ color: '#a78bfa' }}>✈ {seg.aerolinea?.toUpperCase()} · {aerolineaNombre}</span>
+                                          )}
+                                          {seg.numeroVuelo && (
+                                            <span style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', borderRadius: 4, padding: '1px 8px', fontWeight: 700, fontFamily: 'monospace' }}>{seg.numeroVuelo}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -43369,7 +44344,7 @@ export default function App() {
           </div>
         </div>
         <div style={S.content}>
-          {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} />}
+          {view === "dashboard" && <Dashboard quotes={quotes} payments={payments} passengers={passengers} setView={setView} />}
           {view === "services" && <ServicesModule />}
           {view === "providers" && <ProvidersModule />}
           {view === "quotes" && <QuotesModule quotes={quotes} setQuotes={setQuotes} passengers={passengers} setPassengers={setPassengers} />}
